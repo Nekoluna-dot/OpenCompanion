@@ -1,27 +1,3 @@
-# -*- coding: utf-8 -*-
-"""OpenCompanion 启动器 + 配置 + 数据管理 一体化面板。
-
-用法：
-    python scripts/launcher.py
-    或双击 启动器.bat
-
-包含：
-    1. 启动器（第一页）：一键启动/停止 main.py（机器人），窗口内实时查看日志；
-       快捷打开 调试面板 :8080（LLM 原始请求/响应）与 OmbreBrain 后台 :18001
-       （日记 / 信件 / 长期记忆查看与管理）。支持 OB 后台独立启动/停止、
-       运行时间查看、机器人退出后自动重启（可关闭，设置自动保存）。
-    2. 机器人配置：config.ini 全字段 + MCP 工具源启停，逐键写回保留注释，
-       文件被外部修改时自动实时刷新。
-    3. OmbreBrain 配置：MCP/OB/config.yaml（dehydration / embedding）。
-    4. 数据管理：清空 weilink 数据（%USERPROFILE%\.weilink）、对话存档、
-       OB 记忆、日志、运行锁；恢复出厂设置（清全部用户数据并把 API 密钥
-       替换为占位符）。
-
-其他：
-    - 启动时检测残留运行锁（异常关闭）并自动修复。
-    - 关闭窗口二次确认，并停止子进程 / 释放运行锁。
-    - 全程 try/catch，避免界面异常导致机器人进程被连带终止。
-"""
 
 from __future__ import annotations
 
@@ -449,8 +425,7 @@ class LauncherApp:
         g = self._ini_group(inner, "embedding  向量记忆")
         self.yaml_widgets["embedding"] = {k: self._entry_row(g, k, "") for k in EMBEDDING_KEYS}
 
-        ttk.Label(inner, text="提示：embedding 可用 DeepSeek 之外的厂商（如 SiliconFlow），需支持 bge-m3。",
-                  foreground="#888").pack(anchor="w", padx=8)
+
 
     def _build_data_tab(self) -> None:
         f = self.tab_data
