@@ -1311,8 +1311,12 @@ class LauncherApp:
                 if ("=" in stripped and not stripped.startswith("#")
                         and (cur in ("llmapi", "mcp"))):
                     key = stripped.split("=", 1)[0].strip()
-                    if key in ("api_key", "token"):
+                    if key == "api_key":
                         out.append(f"{key} = {PLACEHOLDER}")
+                        continue
+                    if key == "token":
+                        # MCP 服务器默认开放、不鉴权，恢复出厂后置空
+                        out.append(f"{key} = ")
                         continue
                 out.append(line)
             CONFIG_INI.write_text("\n".join(out) + "\n", encoding="utf-8")
