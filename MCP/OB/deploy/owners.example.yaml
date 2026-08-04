@@ -1,0 +1,22 @@
+# 一个大脑、多人共用、记忆隔离 —— owners 配置示例
+#
+# 复制为 deploy/owners.yaml 再改。每个人一个独立实例：独立数据目录 + 独立端口，
+# 记忆完全隔离、互不可见。启动器会自动按人数注入 OWNER_COUNT，前端 ≥2 人时在
+# Dashboard 顶部显示归属徽标（单人则不显示）。
+#
+# 启动：python deploy/multi_owner.py
+#
+# 说明：
+#   - name ：这个人的显示名（会出现在他那份 Dashboard 顶部的归属徽标里）
+#   - port ：这个人的实例对外端口（必须各不相同）
+#   - vault：这个人的数据目录（必须各不相同；相对路径按本文件所在目录解析）
+#   - API Key / 密码等：各实例读各自数据目录下的 config.yaml，或继承启动时的进程环境。
+
+owners:
+  - name: 小明
+    port: 18001
+    vault: ./buckets-ming
+
+  - name: 小红
+    port: 18002
+    vault: ./buckets-hong

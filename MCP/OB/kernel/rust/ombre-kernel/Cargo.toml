@@ -1,0 +1,8 @@
+[package]
+name = "ombre-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "Shadow replay kernel for Ombre Brain ledger events"
+license = "MIT"
+
+[dependencies]

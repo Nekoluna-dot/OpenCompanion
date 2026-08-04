@@ -1,0 +1,12 @@
+{
+  "name": "OmbreForOpenCompanion",
+  "short_name": "OFOC",
+  "description": "A breathing, fading, surfacing memory system for AI models.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2E2F23",
+  "theme_color": "#658873",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

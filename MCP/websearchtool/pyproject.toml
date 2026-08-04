@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cn-scraper-mcp"
+dynamic = ["version"]
+description = "MCP server for Chinese web platforms including Taobao, JD, Bilibili, Douban, Dianping, Xiaohongshu, Zhihu, and Weibo."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "goes_by" }]
+keywords = ["mcp", "scraper", "taobao", "jd", "bilibili", "douban", "dianping", "xiaohongshu", "zhihu", "weibo", "china"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=3.0,<4.0",
+    "curl_cffi>=0.7",
+    "websockets>=13",
+]
+
+[project.scripts]
+cn-scraper-mcp = "cn_scraper_mcp.server:main"
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.2",
+    "pytest>=7",
+    "pytest-asyncio",
+    "pytest-cov",
+    "python-dotenv",
+    "ruff>=0.9",
+    "twine>=6",
+]
+
+[project.urls]
+Homepage = "https://github.com/goesByhc/cn-scraper-mcp"
+Repository = "https://github.com/goesByhc/cn-scraper-mcp"
+Issues = "https://github.com/goesByhc/cn-scraper-mcp/issues"
+Changelog = "https://github.com/goesByhc/cn-scraper-mcp/blob/master/CHANGELOG.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "cn_scraper_mcp.__version__" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501", "E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

@@ -1,0 +1,41 @@
+OpenCompanion 一键包
+免安装、免 Python 环境、免虚拟环境。解压后双击「启动.bat」即可运行。
+使用方法
+1.双击config.ini
+base_url = https://api.deepseek.com //需要带/chat/completions 完整的
+api_key = sk-34529c58fdb8efengkuangxinqi4kfcvivo50 //填写你自己的
+model = deepseek-v4-flash 模型名字
+thinking = true //是否开启思考 true是 false不
+
+常见问题
+提示找不到 python：不要单独移动 `runtime` 文件夹，整个包解压在一起
+想彻底清空记忆：在微信里对机器人说 `/清除记忆` 并确认；或删掉 `conversation\`、`data\`、`MCP\OB\buckets\` 里的内容
+向量记忆不可用：`MCP\OB\config.yaml` 里 embedding 的 api_key 需换成你自己的向量 API 密钥；没配置也不影响聊天
+换电脑：直接拷贝整个文件夹即可（配置、记忆都跟着走）
+MCP\OB\config.yaml
+dehydration:
+  api_format: openai_compat
+  api_key: sk-34529c58f1kfcvivo508e397c21471e172d //apikey
+  base_url: https://api.deepseek.com/v1 //填写模型api
+  max_tokens: 1024
+  model: deepseek-v4-flash //模型名字
+  temperature: 0.1
+  timeout_seconds: 120
+  
+  //向量相关
+  embedding:
+  api_format: openai_compat
+  api_key: sk-kzdudyjmqqsgiosdikyyjnkfcvivo50nvvuufwoasudslxrk //填写你自己的apikey 
+  backend: api
+  background_indexing: true
+  base_url: https://api.siliconflow.cn/v1 //建议用硅基流动 免费的
+  circuit_base_seconds: 30
+  circuit_failure_threshold: 3
+  circuit_max_seconds: 600
+  dim: 1024
+  enabled: true
+  model: BAAI/bge-m3
+  retry_base_seconds: 5
+  retry_max_seconds: 300
+  timeout_seconds: 120
+  注意 向量api填写不填写不影响聊天 同时也可以使用ollama本地部署

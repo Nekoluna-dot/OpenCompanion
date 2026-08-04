@@ -1,0 +1,73 @@
+bucket_type_defaults:
+  letter:
+    dont_surface: false
+    weight: 1.0
+  plan:
+    weight: 0.5
+decay:
+  check_interval_hours: 24
+  emotion_weights:
+    arousal_boost: 0.8
+    base: 1.0
+  lambda: 0.05
+  threshold: 0.3
+dehydration:
+  api_format: openai_compat
+  api_key: sk-REPLACE_ME
+  base_url: https://api.deepseek.com/v1
+  max_tokens: 1024
+  model: deepseek-v4-flash
+  temperature: 0.1
+  timeout_seconds: 120
+embedding:
+  api_format: openai_compat
+  api_key: sk-REPLACE_ME
+  backend: api
+  background_indexing: true
+  base_url: https://api.siliconflow.cn/v1
+  circuit_base_seconds: 30
+  circuit_failure_threshold: 3
+  circuit_max_seconds: 600
+  dim: 1024
+  enabled: true
+  model: BAAI/bge-m3
+  retry_base_seconds: 5
+  retry_max_seconds: 300
+  timeout_seconds: 120
+hooks:
+  allow_public: false
+  token: ''
+host_port: 18001
+limits:
+  max_bucket_bytes: 51200
+  max_grow_input_bytes: 2097152
+  max_grow_items: 100
+  max_import_upload_bytes: 67108864
+  max_management_request_bytes: 4194304
+  max_mcp_request_bytes: 4194304
+  max_metadata_bytes: 16384
+  max_pinned: 20
+  max_query_bytes: 16384
+log_level: INFO
+matching:
+  fuzzy_threshold: 50
+  max_results: 5
+mcp_require_auth: false
+merge_threshold: 75
+scoring_weights:
+  emotion_resonance: 2.0
+  importance: 1.0
+  time_proximity: 1.5
+  topic_relevance: 4.0
+storage:
+  external_change_poll_seconds: 1.0
+surfacing:
+  breath_max_results: 20
+  breath_max_tokens: 10000
+  feel_max_tokens: 6000
+  sampling:
+    enabled: false
+    sample_k: 2
+    temperature: 0.7
+    top_k: 5
+transport: stdio

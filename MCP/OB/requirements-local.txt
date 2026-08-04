@@ -1,0 +1,22 @@
+# ============================================================
+# Ombre Brain — 本地 embedding 后端（可选）
+# Local embedding backends — OPT-IN
+# ============================================================
+#
+# 这一份 requirements 默认不装。仅当你想用 OMBRE_EMBED_BACKEND=bge-small-zh
+# 或 bge-m3 这两档「本地模型」时才需要。
+#
+# 安装方式（CPU-only，约 200MB；GPU 用户请自行换 wheel）：
+#   pip install -r requirements-local.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# Docker 构建时启用：
+#   docker build --build-arg INSTALL_LOCAL_EMBED=1 -t ombre-brain:local .
+#
+# Why opt-in: torch + sentence-transformers + 模型权重合计 2~3 GB，
+# 默认镜像保持精简，对走 API 的用户不收 NVIDIA 全家桶的税。
+# ============================================================
+
+# 注意：torch 必须由 --extra-index-url cpu 通道解析，否则 PyPI 默认拉 CUDA wheel。
+torch>=2.0.0
+sentence-transformers>=2.7.0

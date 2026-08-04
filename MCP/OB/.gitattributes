@@ -1,0 +1,5 @@
+# Shell scripts must stay LF — CRLF would break the `#!/bin/sh` shebang inside the
+# Linux container (`bad interpreter: /bin/sh^M`). Critical for entrypoint.sh, which
+# the Dockerfile COPYs and runs as ENTRYPOINT. Enforce LF on every checkout/build host.
+*.sh text eol=lf
+entrypoint.sh text eol=lf

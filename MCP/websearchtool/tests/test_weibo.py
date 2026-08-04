@@ -1,0 +1,659 @@
+"""Unit tests for WeiboEngine.search() + hot_list() response parsing.
+
+ALL mocks — no real network, filesystem, or Chrome.
+
+We mock `engine.http.get_json()` directly.
+"""
+
+from unittest.mock import MagicMock, Mock
+
+import pytest
+
+from cn_scraper_mcp.engines.weibo import WeiboEngine, _clean_html
+from cn_scraper_mcp.errors import (
+    AuthRequiredError,
+    CookieExpiredError,
+    PlatformError,
+)
+from cn_scraper_mcp.http import HttpClient
+
+# ── Fixtures ─────────────────────────────────────────────────────────────
+
+
+def _make_engine(with_cookies: bool = True) -> WeiboEngine:
+    """Build a WeiboEngine with controlled cookies (no file I/O)."""
+    eng = WeiboEngine.__new__(WeiboEngine)
+    eng.cookies_path = "/fake/path/weibo.json"
+    if with_cookies:
+        eng.cookies = {"SUB": "fake_sub_token_value"}
+    else:
+        eng.cookies = {}
+    eng.http = HttpClient(max_retries=0)
+    return eng
+
+
+def _search_response_json() -> dict:
+    """Realistic weibo.com/ajax/statuses/search desktop API response."""
+    return {
+        "ok": 1,
+        "data": {
+            "statuses": [
+                {
+                    "mid": "5123456789012345",
+                    "id": 5123456789012345,
+                    "text_raw": "华为Mate70真是太厉害了！拍照效果惊艳",
+                    "text": "华为Mate70真是太<em>厉害了</em>！<br />拍照效果惊艳",
+                    "user": {"id": 1234567890, "screen_name": "数码爱好者"},
+                    "attitudes_count": 2300,
+                    "comments_count": 156,
+                    "reposts_count": 89,
+                    "created_at": "Mon Jul 13 19:32:20 +0800 2026",
+                },
+                {
+                    "mid": "5123456789012346",
+                    "id": 5123456789012346,
+                    "text_raw": "分享一下@华为终端的新品体验",
+                    "text": '分享一下<a href="/n/华为终端">@华为终端</a>的新品体验',
+                    "user": {"id": 1234567891, "screen_name": "科技小明"},
+                    "attitudes_count": 1200,
+                    "comments_count": 45,
+                    "reposts_count": 32,
+                    "created_at": "Mon Jul 13 18:15:00 +0800 2026",
+                },
+                {
+                    "mid": "5123456789012347",
+                    "id": 5123456789012347,
+                    "text_raw": "华为P70降价了",
+                    "text": "华为P70降价了",
+                    "user": {"id": 1234567892, "screen_name": "数码爆料站"},
+                    "attitudes_count": 3400,
+                    "comments_count": 210,
+                    "reposts_count": 150,
+                    "created_at": "Mon Jul 13 17:00:00 +0800 2026",
+                },
+            ]
+        },
+    }
+
+
+def _search_not_logged_in_response() -> dict:
+    """Weibo API response when not logged in."""
+    return {
+        "ok": -100,
+        "url": "https://passport.weibo.com/sso/signin?entry=wapsso...",
+    }
+
+
+def _hot_list_response_json() -> dict:
+    """Realistic weibo.com/ajax/side/hotSearch response."""
+    return {
+        "ok": 1,
+        "data": {
+            "realtime": [
+                {
+                    "word": "中国首个禁售燃油车省份确认",
+                    "realpos": 1,
+                    "num": 1105077,
+                    "label_name": "爆",
+                    "note": "中国首个禁售燃油车省份确认",
+                    "topic_flag": 1,
+                },
+                {
+                    "word": "沈阳百年一遇暴雨",
+                    "realpos": 2,
+                    "num": 1100357,
+                    "label_name": "热",
+                    "note": "沈阳百年一遇暴雨",
+                    "topic_flag": 1,
+                },
+                {
+                    "word": "华为Mate70发布会",
+                    "realpos": 3,
+                    "num": 980000,
+                    "label_name": "",
+                    "note": "华为Mate70系列新品发布",
+                    "topic_flag": 1,
+                },
+            ],
+            "hotgov": {
+                "name": "#习近平将出席2026世界人工智能大会开幕式#",
+                "word": "#习近平将出席2026世界人工智能大会开幕式#",
+                "url": "http://weibo.com/1699432410/R8unx97b6",
+                "note": "#习近平将出席2026世界人工智能大会开幕式#",
+            },
+        },
+    }
+
+
+# ── Tests: _clean_html ──────────────────────────────────────────────────
+
+
+class TestCleanHtml:
+    """Test HTML cleaning utility."""
+
+    def test_strips_basic_tags(self):
+        assert _clean_html("Hello <b>World</b>") == "Hello World"
+
+    def test_strips_br_tags(self):
+        assert _clean_html("Line 1<br />Line 2") == "Line 1Line 2"
+
+    def test_strips_em_tags(self):
+        assert _clean_html("华为<em>Mate70</em>真好") == "华为Mate70真好"
+
+    def test_strips_links(self):
+        text = '分享<a href="/n/华为终端">@华为终端</a>新品'
+        assert _clean_html(text) == "分享@华为终端新品"
+
+    def test_none_returns_empty(self):
+        assert _clean_html(None) == ""
+
+    def test_empty_string(self):
+        assert _clean_html("") == ""
+
+
+# ── Tests: search() ──────────────────────────────────────────────────────
+
+
+class TestWeiboSearch:
+    """Test WeiboEngine.search() response parsing."""
+
+    def test_normal_search_with_cookies(self):
+        """With valid cookies, search returns parsed items."""
+        engine = _make_engine(with_cookies=True)
+
+        engine.http.get_json = Mock(return_value=(200, _search_response_json()))
+        result = engine.search("华为", limit=10)
+
+        assert "error" not in result
+        assert result["keyword"] == "华为"
+        assert result["count"] == 3
+
+        # First item
+        item0 = result["items"][0]
+        assert item0["id"] == "5123456789012345"
+        assert "华为" in item0["text"]
+        assert "<em>" not in item0["text"]  # HTML stripped
+        assert "<br" not in item0["text"]
+        assert item0["user"] == "数码爱好者"
+        assert item0["attitudes"] == 2300
+        assert item0["comments"] == 156
+        assert item0["reposts"] == 89
+        assert item0["url"] == "https://weibo.com/1234567890/5123456789012345"
+
+    def test_search_without_cookies_returns_error(self):
+        """No cookies → error dict with hint."""
+        engine = _make_engine(with_cookies=False)
+
+        result = engine.search("华为", limit=10)
+
+        assert "error" in result
+        assert "搜索需要登录" in result["error"]
+        assert "hint" in result
+
+    def test_api_returns_ok_negative_100(self):
+        """API returns ok:-100 → login required error."""
+        engine = _make_engine(with_cookies=True)
+
+        engine.http.get_json = Mock(return_value=(200, _search_not_logged_in_response()))
+        result = engine.search("华为", limit=10)
+
+        assert "error" in result
+        assert "搜索需要登录" in result["error"]
+
+    def test_limit_truncates_results(self):
+        """limit=2 should return only 2 items."""
+        engine = _make_engine(with_cookies=True)
+
+        engine.http.get_json = Mock(return_value=(200, _search_response_json()))
+        result = engine.search("华为", limit=2)
+
+        assert result["count"] == 2
+        assert len(result["items"]) == 2
+
+    def test_network_error_returns_error_dict(self):
+        """Transport failure → error dict."""
+        engine = _make_engine(with_cookies=True)
+
+        engine.http.get_json = Mock(
+            return_value=(0, {"error": "Connection failed: timeout"})
+        )
+        result = engine.search("华为", limit=10)
+
+        assert "error" in result
+        assert "timeout" in result["error"]
+
+    def test_all_statuses_parsed(self):
+        """Desktop API: all entries in statuses[] are weibo posts (no card_type filter)."""
+        engine = _make_engine(with_cookies=True)
+
+        engine.http.get_json = Mock(return_value=(200, _search_response_json()))
+        result = engine.search("华为", limit=10)
+
+        assert len(result["items"]) == 3  # all 3 statuses parsed
+
+    def test_uses_id_fallback_when_mid_missing(self):
+        """Desktop API always has mid; id used as fallback."""
+        engine = _make_engine(with_cookies=True)
+
+        engine.http.get_json = Mock(return_value=(200, _search_response_json()))
+        result = engine.search("华为", limit=10)
+
+        # All items have mid + id in desktop API
+        item2 = result["items"][2]
+        assert item2["id"] == "5123456789012347"
+
+    def test_http_400_returns_error(self):
+        engine = _make_engine(with_cookies=True)
+        engine.http.get_json = Mock(return_value=(400, {"error": "Bad request"}))
+        result = engine.search("test", limit=10)
+        assert "error" in result
+
+
+# ── Tests: hot_list() ────────────────────────────────────────────────────
+
+
+class TestWeiboHotList:
+    """Test WeiboEngine.hot_list() response parsing."""
+
+    def test_normal_hot_list(self):
+        """hot_list returns parsed trending items."""
+        engine = _make_engine(with_cookies=False)  # hot list doesn't need cookies
+
+        engine.http.get_json = Mock(return_value=(200, _hot_list_response_json()))
+        result = engine.hot_list()
+
+        assert "error" not in result
+        assert result["count"] == 3
+        assert len(result["items"]) == 3
+
+        item0 = result["items"][0]
+        assert item0["word"] == "中国首个禁售燃油车省份确认"
+        assert item0["rank"] == 1
+        assert item0["num"] == 1105077
+        assert item0["label"] == "爆"
+        assert "s.weibo.com" in item0["url"]
+
+        # hotgov
+        assert result["hotgov"] is not None
+        assert "习近平" in result["hotgov"]["name"]
+
+    def test_hot_list_network_error(self):
+        """Network error → error dict."""
+        engine = _make_engine(with_cookies=False)
+
+        engine.http.get_json = Mock(
+            return_value=(0, {"error": "Connection refused"})
+        )
+        result = engine.hot_list()
+
+        assert "error" in result
+        assert "refused" in result["error"]
+
+    def test_hot_list_empty_realtime(self):
+        """Empty realtime array → no items."""
+        engine = _make_engine(with_cookies=False)
+
+        resp = {"ok": 1, "data": {"realtime": []}}
+        engine.http.get_json = Mock(return_value=(200, resp))
+        result = engine.hot_list()
+
+        assert result["items"] == []
+        assert result["count"] == 0
+
+    def test_hot_list_no_hotgov(self):
+        """No hotgov field → null."""
+        engine = _make_engine(with_cookies=False)
+
+        resp = {
+            "ok": 1,
+            "data": {
+                "realtime": [
+                    {"word": "test", "realpos": 1, "num": 100, "label_name": "", "note": ""}
+                ]
+            },
+        }
+        engine.http.get_json = Mock(return_value=(200, resp))
+        result = engine.hot_list()
+
+        assert result["hotgov"] is None
+
+    def test_hot_list_http_500(self):
+        """HTTP 500 -> error dict."""
+        engine = _make_engine(with_cookies=False)
+        engine.http.get_json = Mock(return_value=(500, {"error": "Internal error"}))
+        result = engine.hot_list()
+        assert "error" in result
+
+
+# ── Helpers: user timeline fixtures ────────────────────────────────────
+
+
+def _make_user_timeline_posts() -> dict:
+    """Realistic weibo.com/ajax/statuses/mymblog response."""
+    return {
+        "ok": 1,
+        "data": {
+            "list": [
+                {
+                    "mid": "5123456789012345",
+                    "text_raw": "今天天气真好！出门散步",
+                    "text": "今天天气真好！<br />出门散步",
+                    "user": {"id": 2803301701, "screen_name": "人民日报"},
+                    "attitudes_count": 15000,
+                    "comments_count": 3200,
+                    "reposts_count": 8900,
+                    "created_at": "Mon Jul 13 10:00:00 +0800 2026",
+                },
+                {
+                    "mid": "5123456789012346",
+                    "text_raw": "分享一个好消息...",
+                    "text": "分享一个<em>好消息</em>...",
+                    "user": {"id": 2803301701, "screen_name": "人民日报"},
+                    "attitudes_count": 8200,
+                    "comments_count": 1500,
+                    "reposts_count": 4300,
+                    "created_at": "Mon Jul 13 08:30:00 +0800 2026",
+                },
+                {
+                    "mid": "5123456789012347",
+                    "text_raw": "今日要闻速览",
+                    "text": "今日要闻速览",
+                    "user": {"id": 2803301701, "screen_name": "人民日报"},
+                    "attitudes_count": 5600,
+                    "comments_count": 900,
+                    "reposts_count": 2100,
+                    "created_at": "Mon Jul 13 06:00:00 +0800 2026",
+                },
+            ],
+        },
+    }
+
+
+# ── Tests: user_timeline ─────────────────────────────────────────────
+
+
+class TestWeiboUserTimeline:
+    """Test WeiboEngine.user_timeline()."""
+
+    def test_normal_timeline_with_cookies(self):
+        """Normal user timeline with valid cookies returns parsed items."""
+        eng = _make_engine()
+        eng.http.get_json = MagicMock(return_value=(200, _make_user_timeline_posts()))
+        result = eng.user_timeline("2803301701", limit=10)
+
+        assert result["uid"] == "2803301701"
+        assert result["user"] == "人民日报"
+        assert result["count"] == 3
+        assert len(result["items"]) == 3
+        assert result["items"][0]["text"] == "今天天气真好！出门散步"
+        assert result["items"][0]["attitudes"] == 15000
+        assert result["items"][0]["comments"] == 3200
+        assert result["items"][0]["reposts"] == 8900
+
+    def test_timeline_without_cookies_returns_error(self):
+        """Timeline without cookies should return error dict."""
+        eng = _make_engine(with_cookies=False)
+        result = eng.user_timeline("2803301701")
+        assert "error" in result
+        assert "时间线需要登录" in result["error"]
+
+    def test_timeline_limit_truncates(self):
+        """limit should truncate returned items."""
+        eng = _make_engine()
+        eng.http.get_json = MagicMock(return_value=(200, _make_user_timeline_posts()))
+        result = eng.user_timeline("2803301701", limit=2)
+
+        assert result["count"] == 2
+        assert len(result["items"]) == 2
+        assert result["items"][0]["text"] == "今天天气真好！出门散步"
+        assert result["items"][1]["text"] == "分享一个好消息..."
+
+    def test_timeline_api_ok_not_1(self):
+        """API ok != 1 should return error."""
+        eng = _make_engine()
+        eng.http.get_json = MagicMock(return_value=(200, {"ok": -100, "url": "..."}))
+        result = eng.user_timeline("2803301701")
+
+        assert "error" in result
+        assert "ok=-100" in result["error"]
+        assert result["uid"] == "2803301701"
+
+    def test_timeline_network_error(self):
+        """Network error returns error dict."""
+        eng = _make_engine()
+        eng.http.get_json = MagicMock(return_value=(0, {"error": "timeout"}))
+        result = eng.user_timeline("2803301701")
+        assert "error" in result
+
+    def test_timeline_http_error(self):
+        """HTTP error returns error dict."""
+        eng = _make_engine()
+        eng.http.get_json = MagicMock(return_value=(403, {"error": "forbidden"}))
+        result = eng.user_timeline("2803301701")
+        assert "error" in result
+        assert "HTTP 403" in result["error"]
+
+    def test_timeline_uses_id_fallback_when_mid_missing(self):
+        """Item without 'mid' should fall back to 'id'."""
+        eng = _make_engine()
+        resp = {
+            "ok": 1,
+            "data": {
+                "list": [
+                    {
+                        "id": 5123456789012348,
+                        "text_raw": "无 mid 字段的帖子",
+                        "user": {"id": 2803301701, "screen_name": "人民日报"},
+                        "attitudes_count": 100,
+                        "comments_count": 10,
+                        "reposts_count": 5,
+                        "created_at": "Mon Jul 13 01:00:00 +0800 2026",
+                    },
+                ],
+            },
+        }
+        eng.http.get_json = MagicMock(return_value=(200, resp))
+        result = eng.user_timeline("2803301701")
+        assert result["count"] == 1
+        assert result["items"][0]["id"] == "5123456789012348"
+
+    def test_timeline_empty_list(self):
+        """Empty list returns count 0, no crash."""
+        eng = _make_engine()
+        resp = {"ok": 1, "data": {"list": []}}
+        eng.http.get_json = MagicMock(return_value=(200, resp))
+        result = eng.user_timeline("2803301701")
+        assert result["uid"] == "2803301701"
+        assert result["count"] == 0
+        assert result["items"] == []
+
+    def test_timeline_html_stripped(self):
+        """HTML tags in text should be stripped."""
+        eng = _make_engine()
+        resp = {
+            "ok": 1,
+            "data": {
+                "list": [
+                    {
+                        "mid": "5123456789012349",
+                        "text": "Hello <b>World</b><br />Line2",
+                        "user": {"id": 1, "screen_name": "test"},
+                        "attitudes_count": 1,
+                        "comments_count": 1,
+                        "reposts_count": 1,
+                        "created_at": "Mon Jul 13 00:00:00 +0800 2026",
+                    },
+                ],
+            },
+        }
+        eng.http.get_json = MagicMock(return_value=(200, resp))
+        result = eng.user_timeline("1")
+        assert result["items"][0]["text"] == "Hello WorldLine2"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# get_comments
+# ═══════════════════════════════════════════════════════════════════
+
+
+def _comments_response_json():
+    """Realistic weibo comments API response."""
+    return {
+        "ok": 1,
+        "data": [
+            {
+                "idstr": "5123456789012345",
+                "text_raw": "法国这场真的被压着打",
+                "user": {"screen_name": "球迷甲", "id": 1000001},
+                "like_counts": 326,
+                "created_at": "Thu Jul 16 14:30:00 +0800 2026",
+            },
+            {
+                "idstr": "5123456789012346",
+                "text_raw": "西班牙今年状态太好了",
+                "user": {"screen_name": "球迷乙", "id": 1000002},
+                "like_counts": 218,
+                "created_at": "Thu Jul 16 14:32:00 +0800 2026",
+            },
+            {
+                "idstr": "5123456789012347",
+                "text_raw": "裁判确实有点偏...",
+                "user": {"screen_name": "球迷丙", "id": 1000003},
+                "like_counts": 95,
+                "created_at": "Thu Jul 16 14:35:00 +0800 2026",
+            },
+        ],
+    }
+
+
+class TestWeiboComments:
+    """Test WeiboEngine.get_comments() response parsing."""
+
+    def test_normal_comments_with_cookies(self):
+        eng = _make_engine(with_cookies=True)
+        eng.http.get_json = MagicMock(return_value=(200, _comments_response_json()))
+
+        result = eng.get_comments("5123456789012345", limit=20)
+
+        assert "error" not in result
+        assert result["mid"] == "5123456789012345"
+        assert result["count"] == 3
+        assert len(result["comments"]) == 3
+
+        c0 = result["comments"][0]
+        assert c0["content"] == "法国这场真的被压着打"
+        assert c0["user"] == "球迷甲"
+        assert c0["user_id"] == "1000001"
+        assert c0["likes"] == 326
+
+    def test_without_cookies(self):
+        eng = _make_engine(with_cookies=False)
+        with pytest.raises(AuthRequiredError):
+            eng.get_comments("5123456789012345")
+
+    def test_empty_comments(self):
+        eng = _make_engine(with_cookies=True)
+        eng.http.get_json = MagicMock(return_value=(200, {"ok": 1, "data": []}))
+
+        result = eng.get_comments("5123456789012345")
+        assert result["comments"] == []
+        assert result["count"] == 0
+
+    def test_ok_not_1(self):
+        eng = _make_engine(with_cookies=True)
+        eng.http.get_json = MagicMock(return_value=(200, {"ok": -100}))
+
+        with pytest.raises(CookieExpiredError):
+            eng.get_comments("5123456789012345")
+
+    def test_network_error(self):
+        eng = _make_engine(with_cookies=True)
+        eng.http.get_json = MagicMock(
+            return_value=(0, {"error": "Connection refused"})
+        )
+        with pytest.raises(PlatformError):
+            eng.get_comments("5123456789012345")
+
+    def test_null_user_safe(self):
+        eng = _make_engine(with_cookies=True)
+        resp = {
+            "ok": 1,
+            "data": [{"idstr": "1", "text_raw": "x", "user": None, "like_counts": 0}],
+        }
+        eng.http.get_json = MagicMock(return_value=(200, resp))
+
+        result = eng.get_comments("1")
+        assert result["comments"][0]["user"] == ""
+
+    def test_mid_fallback_to_id(self):
+        """Comments without idstr should fall back to id."""
+        eng = _make_engine(with_cookies=True)
+        resp = {
+            "ok": 1,
+            "data": [{"id": "999", "text_raw": "x", "user": {"screen_name": "a"}, "like_counts": 1}],
+        }
+        eng.http.get_json = MagicMock(return_value=(200, resp))
+
+        result = eng.get_comments("1")
+        assert result["comments"][0]["id"] == "999"
+
+    def test_pagination_cursor_is_returned_as_string(self):
+        eng = _make_engine(with_cookies=True)
+        eng.http.get_json = MagicMock(return_value=(200, {
+            "ok": 1,
+            "data": [],
+            "max_id": 123456,
+        }))
+
+        result = eng.get_comments("1")
+
+        assert result["next_max_id"] == "123456"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# get_post
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestWeiboPost:
+    """Test WeiboEngine.get_post()."""
+
+    def test_normal_post(self):
+        eng = _make_engine(with_cookies=True)
+        eng.http.get_json = MagicMock(return_value=(200, {
+            "ok": 1,
+            "mid": "5123456789012345",
+            "mblogid": "Pabc123xyz",
+            "text_raw": "法国0-2西班牙，德尚赛后质疑裁判...",
+            "user": {"screen_name": "五星体育", "id": 123456},
+            "attitudes_count": 4911,
+            "comments_count": 326,
+            "reposts_count": 120,
+            "created_at": "Thu Jul 16 14:00:00 +0800 2026",
+        }))
+
+        result = eng.get_post("5123456789012345")
+        assert result["id"] == "5123456789012345"
+        assert "德尚" in result["text"]
+        assert result["user"] == "五星体育"
+        assert result["attitudes"] == 4911
+        assert result["comments"] == 326
+        assert result["reposts"] == 120
+        assert result["url"] == "https://weibo.com/123456/Pabc123xyz"
+
+    def test_without_cookies(self):
+        eng = _make_engine(with_cookies=False)
+        result = eng.get_post("5123456789012345")
+        assert "需要登录" in result["error"]
+
+    def test_ok_not_1(self):
+        eng = _make_engine(with_cookies=True)
+        eng.http.get_json = MagicMock(return_value=(200, {"ok": -100}))
+        result = eng.get_post("5123456789012345")
+        assert "ok=-100" in result["error"]
+
+    def test_network_error(self):
+        eng = _make_engine(with_cookies=True)
+        eng.http.get_json = MagicMock(return_value=(0, {"error": "timeout"}))
+        result = eng.get_post("5123456789012345")
+        assert "timeout" in result["error"]

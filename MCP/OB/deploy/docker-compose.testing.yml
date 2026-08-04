@@ -1,0 +1,17 @@
+# Local testing override (not for prod). Layer on top of docker-compose.yml:
+#   docker compose --env-file deploy/.env -f deploy/docker-compose.yml -f deploy/docker-compose.testing.yml up -d
+# 镜像已用 `docker build --build-arg PIP_INDEX_URL=... -t ombre-brain:testing .` 预构建；
+# 这里用 image: 直接引用它，避免 up 时无参重建（会因宿主代理掐断 PyPI 而失败）。
+services:
+  ombre-brain:
+    image: ombre-brain:testing
+    build:
+      args:
+        # 宿主 v2rayN 代理会掐断 build 时的 PyPI 连接 → 走清华镜像源（国内直连，稳）。
+        PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
+        PIP_TRUSTED_HOST: pypi.tuna.tsinghua.edu.cn
+        # cloudflared 从 GitHub Releases 下载，测试不需要 Tunnel，直接跳过省事。
+        INSTALL_CLOUDFLARED: "0"
+    environment:
+      - OMBRE_MCP_REQUIRE_AUTH=false
+      - OMBRE_EMBED_FORMAT=openai_compat

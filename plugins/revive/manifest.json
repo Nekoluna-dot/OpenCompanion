@@ -1,0 +1,18 @@
+{
+  "name": "revive",
+  "description": "主动沟通决策器",
+  "mcp": {
+    "command": "runtime/python/python.exe",
+    "args": ["plugins/revive/server.py"],
+    "expose_to_llm": false
+  },
+  "trigger": {
+    "module": "plugins.revive.trigger",
+    "class": "ReviveTrigger",
+    "interval": 60
+  },
+  "on_user_reply": {
+    "module": "plugins.revive.trigger",
+    "function": "on_user_reply"
+  }
+}
