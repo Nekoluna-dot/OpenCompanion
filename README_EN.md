@@ -1,4 +1,5 @@
 # OpenCompanion — Your Exclusive AI Companion
+[English](README_EN.md) | [简体中文](README.md)
 
 <img width="3136" height="1344" alt="rmb20260806020137rfe" src="https://github.com/user-attachments/assets/8fc42ab1-c970-437f-b54a-ff025665e68b" />
 
