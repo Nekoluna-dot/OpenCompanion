@@ -1,4 +1,5 @@
 # OpenCompanion — 你的专属 AI 陪伴助手
+<img width="3136" height="1344" alt="rmb20260806020137rfe" src="https://github.com/user-attachments/assets/8fc42ab1-c970-437f-b54a-ff025665e68b" />
 
 一个开源的多平台 AI 陪伴聊天机器人：像朋友一样跟你聊天，记得你说过的话，偶尔主动找你搭话，也能查天气、搜 B 站视频、记待办、设提醒。有性格、有情绪、有私密日记——既懂陪伴，也能干活。无论是男友 女友 闺蜜 都可胜任
 一个真实的人格 绝不是AI能够代替的 
@@ -30,8 +31,10 @@
 ## 快速浏览
 
 ##### 自动提醒&傲娇性格&后台写信&基于OmbreBrain开源项目的记忆系统
-
-
+演示视频及安装视频: https://www.bilibili.com/video/BV1BmM16jEGD
+<img width="398" height="525" alt="屏幕截图 2026-08-04 035927" src="https://github.com/user-attachments/assets/188dd488-57b7-4911-9a4f-1b215d42a444" />
+<img width="419" height="539" alt="屏幕截图 2026-08-04 035827" src="https://github.com/user-attachments/assets/3f89b316-150b-4d06-99b8-af832184a235" />
+<img width="425" height="627" alt="屏幕截图 2026-08-04 040544" src="https://github.com/user-attachments/assets/d103727a-374a-4da0-93c8-e0324c5c237a" />
 
 
 
