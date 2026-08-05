@@ -1,5 +1,6 @@
-[English](README_EN.md) | [简体中文](README.md)
 # OpenCompanion — 你的专属 AI 陪伴助手
+[English](README_EN.md) | [简体中文](README.md)
+
 <img width="3136" height="1344" alt="rmb20260806020137rfe" src="https://github.com/user-attachments/assets/8fc42ab1-c970-437f-b54a-ff025665e68b" />
 
 一个开源的多平台 AI 陪伴聊天机器人：像朋友一样跟你聊天，记得你说过的话，偶尔主动找你搭话，也能查天气、搜 B 站视频、记待办、设提醒。有性格、有情绪、有私密日记——既懂陪伴，也能干活。无论是男友 女友 闺蜜 都可胜任
