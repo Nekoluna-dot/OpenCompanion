@@ -1,3 +1,4 @@
+[English](README_EN.md) | [简体中文](README.md)
 # OpenCompanion — 你的专属 AI 陪伴助手
 <img width="3136" height="1344" alt="rmb20260806020137rfe" src="https://github.com/user-attachments/assets/8fc42ab1-c970-437f-b54a-ff025665e68b" />
 
@@ -35,7 +36,6 @@
 <img width="419" height="539" alt="屏幕截图 2026-08-04 035827" src="https://github.com/user-attachments/assets/3f89b316-150b-4d06-99b8-af832184a235" />
 <img width="425" height="627" alt="屏幕截图 2026-08-04 040544" src="https://github.com/user-attachments/assets/d103727a-374a-4da0-93c8-e0324c5c237a" />
 <img width="599" height="519" alt="屏幕截图 2026-08-06 021626" src="https://github.com/user-attachments/assets/4ba5f6ca-b038-43e4-a57c-1e0fe332b938" />
-**Simple Use**
 
 
 ## 快速开始
