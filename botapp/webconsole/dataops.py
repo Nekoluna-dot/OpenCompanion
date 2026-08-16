@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import configparser
+import json
 import os
 import re
 import shutil
@@ -135,6 +136,7 @@ def factory_reset() -> str:
     except OSError:
         pass
     _replace_api_keys()
+    _prune_missing_sources()
     return "已恢复出厂设置。请重新配置 API 密钥后再启动机器人。"
 
 
@@ -170,7 +172,7 @@ def factory_reset_full() -> str:
     default_cfg = _git_default_config()
     if default_cfg:
         try:
-            CONFIG_INI.write_text(default_cfg, encoding="utf-8")
+            CONFIG_INI.write_text(_sanitize_mcpsources(default_cfg), encoding="utf-8")
         except OSError:
             _replace_api_keys()
     else:
@@ -202,6 +204,70 @@ def _git_default_config() -> str | None:
     except (OSError, subprocess.SubprocessError):
         pass
     return None
+
+
+def _stdio_exists(value: str) -> bool:
+    """stdio 描述的脚本文件是否仍在项目里（args 里的路径相对项目根判定）。
+
+    URL 型 MCP 源不涉及本地文件，返回 True（保留）。
+    """
+    value = value.strip().strip('"').strip("'")
+    if not value.startswith("{"):
+        return True  # http:// URL 或普通字符串
+    try:
+        obj = json.loads(value)
+    except (ValueError, TypeError):
+        return True
+    if not isinstance(obj, dict):
+        return True
+    args = obj.get("args")
+    if not isinstance(args, list):
+        return True
+    for arg in args:
+        arg = str(arg).strip().strip('"').strip("'")
+        if not arg:
+            continue
+        p = Path(arg)
+        if not p.is_absolute():
+            p = _ROOT / p
+        if p.exists():
+            return True
+    return False
+
+
+def _sanitize_mcpsources(text: str) -> str:
+    """出厂重置后注释掉指向已不存在脚本的 stdio MCP 源，避免误启用。"""
+    lines = text.splitlines()
+    in_mcp = False
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            in_mcp = s[1:-1].strip().lower() == "mcpsources"
+            continue
+        if not in_mcp:
+            continue
+        if not s or s.startswith("#"):
+            continue
+        if "=" not in s:
+            continue
+        name = s.split("=", 1)[0].strip()
+        value = s.split("=", 1)[1]
+        if not _stdio_exists(value):
+            lines[i] = f"# {line.lstrip()}"
+    return "\n".join(lines)
+
+
+def _prune_missing_sources() -> None:
+    """就地注释掉 config.ini 里指向已不存在脚本的 MCP 源。"""
+    try:
+        if not CONFIG_INI.exists():
+            return
+        text = CONFIG_INI.read_text(encoding="utf-8")
+        out = _sanitize_mcpsources(text)
+        if out != text:
+            CONFIG_INI.write_text(out, encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _replace_api_keys() -> None:
