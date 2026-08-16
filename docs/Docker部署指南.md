@@ -8,22 +8,34 @@
 - Docker（含 Compose 插件，`docker compose version` 可查）
 - Linux 主机（或 Windows/macOS 上的 Docker Desktop）
 
-## 首次部署
+## 方式一：拉取公开镜像（推荐）
+
+镜像发布在 GitHub Container Registry（ghcr.io），打 tag 时由 GitHub Actions
+自动构建，**无需本地 Docker 构建**。镜像内置的 API key 是占位符，真实 key
+通过挂载的配置文件提供：
 
 ```bash
-# 1. 准备配置：编辑 config.ini，填入你的 API 密钥
-#    [llmapi] api_key = sk-xxx
-#    （mcpsources 里的 runtime/python/python.exe 不用改，
-#     容器里会自动回退到容器内 python）
+# 1. 准备 config.ini（可从仓库下载或在容器外编辑）：
+#    [llmapi] api_key = 你的 DeepSeek key
 
-# 2. 构建并启动（容器主进程是网页控制台，机器人在控制台里管理）
-docker compose up -d --build
+# 2. 拉取并启动（首次会先 docker pull）
+docker compose up -d
 
 # 3. 浏览器打开网页控制台
 #    http://服务器IP:9000
 
 # 4. 在「状态与日志」页点击「启动机器人」，日志里直接出现微信二维码，
 #    用手机微信扫码即可登录（无需 docker attach）
+```
+
+> 拉取的镜像里 `runtime/python/python.exe` 不存在（那是 Windows 便携版），
+> 代码会自动回退到容器内 Python（`botapp/config.py:resolve_python_command`），
+> 无需额外设置。
+
+## 方式二：本地构建
+
+```bash
+docker compose up -d --build
 ```
 
 ## 网页控制台
@@ -97,6 +109,9 @@ docker compose build --no-cache    # 更新镜像（代码/依赖变化时）
 
 - **控制台打不开**：确认 `docker compose ps` 状态 Up，`docker compose logs` 里应有
   `网页控制台: http://0.0.0.0:9000`；检查云服务器安全组/防火墙放行 9000 端口。
+- **拉取了镜像但机器人报 api_key 无效**：镜像里是占位符 key，请确认
+  `./config.ini`、`./MCP/OB/.env`、`./MCP/OB/config.yaml` 三个文件已在
+  宿主机填好真实 key（compose 会把它们挂载进容器覆盖占位符）。
 - **扫码登录后机器人没反应**：在控制台「状态与日志」页确认日志无错误；
   会话过期时重新点「停止」再「启动」，日志会重新出二维码。
 - **会话过期需要重新扫码**：网页控制台停止再启动机器人即可；仍不行时

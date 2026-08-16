@@ -18,6 +18,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 项目代码
 COPY . .
 
-EXPOSE 8000 8080
+EXPOSE 8000 8080 9000 18001
 
 CMD ["python", "main.py"]

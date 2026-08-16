@@ -1,7 +1,7 @@
 services:
   opencompanion:
     build: .
-    image: opencompanion:latest
+    image: ghcr.io/nekoluna-dot/opencompanion:latest
     container_name: opencompanion
     # 容器主进程是网页控制台：机器人在控制台里启停，扫码也在网页日志中完成
     command: ["python", "webconsole.py"]
@@ -20,11 +20,17 @@ services:
       - "8000:8000"
       - "8080:8080"
       - "9000:9000"
+      # OmbreBrain Dashboard + HTTP MCP（OB 是 bot 的 stdio 子进程，
+      # 容器内固定监听 18001，见 MCP/OB/config.yaml host_port: 18001）
+      - "18001:18001"
     volumes:
       # 配置与提示词挂在宿主，改完在网页控制台重启机器人即生效
       - ./config.ini:/app/config.ini
       - ./prompt.txt:/app/prompt.txt
       - ./prompt_extra.txt:/app/prompt_extra.txt
+      # OmbreBrain 配置与密钥（镜像内置的是占位符 key，必须挂载真实文件）
+      - ./MCP/OB/.env:/app/MCP/OB/.env
+      - ./MCP/OB/config.yaml:/app/MCP/OB/config.yaml
       # 数据持久化
       - ./data:/app/data
       - ./conversation:/app/conversation
