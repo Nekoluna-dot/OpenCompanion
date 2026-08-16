@@ -8,17 +8,14 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
-      # 容器内监听 0.0.0.0，端口映射到宿主机后外部才可访问
-      - BOT_MCP_HOST=0.0.0.0
-      - BOT_WEB_HOST=0.0.0.0
+      # 网页控制台必须对外，其余服务（MCP 8000、调试面板 8080 已删除）
+      # 保持回环监听默认值即可，不映射端口
       - BOT_WEBCONSOLE_HOST=0.0.0.0
       # 网页控制台访问令牌（强烈建议设置，控制台可停止机器人/删除数据）
       # - BOT_WEBCONSOLE_TOKEN=change-me
       # 覆盖 mcpsources 里的 runtime/python/python.exe（可选，不设则自动回退容器内 python）
       # - BOT_PYTHON=/usr/local/bin/python
     ports:
-      - "8000:8000"
-      - "8080:8080"
       - "9000:9000"
       # OmbreBrain Dashboard + HTTP MCP（OB 是 bot 的 stdio 子进程，
       # 容器内固定监听 18001，见 MCP/OB/config.yaml host_port: 18001）
