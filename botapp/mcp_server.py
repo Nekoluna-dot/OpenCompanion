@@ -65,6 +65,7 @@ class McpServer:
         port: int,
         token: str,
     ) -> None:
+        McpServer._quiet_mcp_logging()
         try:
             platform.run_mcp_server(
                 transport=transport,
@@ -74,3 +75,20 @@ class McpServer:
             )
         except Exception as e:
             console.mcp(f"服务器异常退出: {e}")
+
+    @staticmethod
+    def _quiet_mcp_logging() -> None:
+        """压低 MCP/uvicorn 的 INFO 日志，避免每个工具调用都刷一行
+        “Processing request of type CallToolRequest”之类的刷屏。"""
+        import logging
+
+        for name in (
+            "mcp", "mcp.server", "mcp.server.session", "mcp.server.lowlevel",
+            "mcp.server.sse", "mcp.shared", "mcp.client",
+            "uvicorn", "uvicorn.access", "uvicorn.error",
+            "sse-starlette", "httpcore",
+        ):
+            try:
+                logging.getLogger(name).setLevel(logging.WARNING)
+            except Exception:
+                pass

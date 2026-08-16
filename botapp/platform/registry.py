@@ -55,6 +55,24 @@ def list_platforms() -> list[str]:
     return sorted(_PLATFORMS)
 
 
+def platform_data_dir(name: str) -> str:
+    """返回平台适配器类声明的数据目录（未声明返回空串）。
+
+    供网页控制台数据管理页识别「该平台的数据存在哪」。
+    仅读取适配器类的 data_dir 声明，不实例化、不导入 weilink 等外部库
+    （插件导入失败时返回空串，不影响控制台其它功能）。
+    """
+    _import_builtin_plugins()
+    cls = _PLATFORMS.get(name)
+    if cls is None:
+        return ""
+    try:
+        raw = getattr(cls, "data_dir", "") or ""
+    except Exception:
+        return ""
+    return str(raw)
+
+
 def create_platform(config) -> "PlatformAdapter":
     """按配置创建平台适配器实例。
 

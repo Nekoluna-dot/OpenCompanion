@@ -1,6 +1,6 @@
 import atexit
-import ctypes
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -9,41 +9,70 @@ from botapp.console import console
 
 _LOCK_PATH = Path(__file__).resolve().parent.parent / "data" / "bot.lock"
 
-# 注意：Windows 上 os.kill(pid, 0) 会真的终止进程（TerminateProcess），
-# 绝不能用来探活。改用 Win32 OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)。
-_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-_STILL_ACTIVE = 259
-_kernel32 = ctypes.windll.kernel32
+_IS_WINDOWS = os.name == "nt"
 
 
 def _pid_alive(pid: int) -> bool:
-
     if pid <= 0:
         return False
-    handle = _kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if not handle:
-        return False
-    try:
-        exit_code = ctypes.c_uint32()
-        if not _kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+    if _IS_WINDOWS:
+        # 注意：Windows 上 os.kill(pid, 0) 会真的终止进程（TerminateProcess），
+        # 绝不能用来探活。改用 Win32 OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)。
+        import ctypes
+
+        _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        _STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
             return False
-        return exit_code.value == _STILL_ACTIVE
-    finally:
-        _kernel32.CloseHandle(handle)
+        try:
+            exit_code = ctypes.c_uint32()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == _STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    # POSIX：os.kill(pid, 0) 仅探活不发送信号
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # 进程存在但无权限
+    except OSError:
+        return False
+    return True
 
 
 def _kill_tree(pid: int) -> None:
-    #必须 /T 递归清理：MCP stdio 子进程（revive/OB/event_logger 等）是
-    #独立进程，只杀主进程会让它们残留成为孤儿进程。然后就会发生一些奇怪的bug 比如变成回声桶
-    try:
-        subprocess.run(
-            ["taskkill", "/PID", str(pid), "/T", "/F"],
-            capture_output=True,
-            timeout=30,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (OSError, subprocess.SubprocessError):
-        pass
+    # 必须递归清理：MCP stdio 子进程（revive/OB/event_logger 等）是
+    # 独立进程，只杀主进程会让它们残留成为孤儿进程。然后就会发生一些奇怪的bug 比如变成回声桶
+    if _IS_WINDOWS:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                timeout=30,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return
+    # POSIX：先 SIGTERM 温柔终止，等 1 秒后再 SIGKILL 兜底。
+    # MCP stdio 子进程随主进程 stdin 关闭自动退出，无需显式杀进程组。
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        if sig == signal.SIGTERM:
+            try:
+                import time
+
+                time.sleep(1.0)
+            except Exception:
+                pass
 
 
 def _release() -> None:
@@ -65,7 +94,13 @@ def acquire_singleton_lock() -> None:
             old_pid = 0
         if old_pid > 0 and _pid_alive(old_pid):
             console.warn(f"检测到已有 bot 正在运行 (PID {old_pid})")
-            answer = input("是否杀掉旧进程并启动新的 bot？[y/N] ").strip().lower()
+            # 非交互环境（Docker 无 -it / 后台启动）无法提问，默认直接接管
+            interactive = sys.stdin.isatty()
+            answer = (
+                "y"
+                if not interactive
+                else input("是否杀掉旧进程并启动新的 bot？[y/N] ").strip().lower()
+            )
             if answer in ("y", "yes"):
                 console.info(f"正在终止旧 bot 进程 (PID {old_pid}) ...")
                 _kill_tree(old_pid)

@@ -220,12 +220,92 @@ class RawViewServer:
             )
 
     def on_chunk(self, chunk: dict) -> None:
-        """流式过程中每收到一个 chunk 时调用，实时更新 live 会话。"""
+        """流式过程中每收到一个 chunk 时调用，实时更新 live 会话。
+
+        兼容两种 SSE 格式：
+        - Chat Completions：chunk["choices"][0]["delta"][...]
+        - Responses API：chunk["type"] == "response.*"（llm 层已注入 SSE event 名）
+        """
         with self._lock:
             live = self._live
             if live is None:
                 return
             live["raw_chunks"].append(chunk)
+            event = chunk.get("type") or ""
+            if event.startswith("response."):
+                if event in (
+                    "response.reasoning_text.delta",
+                    "response.reasoning_summary_text.delta",
+                ):
+                    d = chunk.get("delta")
+                    if d:
+                        live["thinking"].append(d)
+                        self._emit_locked({"type": "thinking", "text": d})
+                elif event == "response.output_text.delta":
+                    d = chunk.get("delta")
+                    if d:
+                        live["reply"].append(d)
+                        self._emit_locked({"type": "reply", "text": d})
+                elif event == "response.output_item.added":
+                    it = chunk.get("item") or {}
+                    if it.get("type") == "function_call":
+                        iid = str(it.get("id") or it.get("call_id") or "")
+                        name = it.get("name") or ""
+                        if not any(
+                            tc.get("id") == iid and tc.get("name")
+                            for tc in live["tool_calls"]
+                        ):
+                            live["tool_calls"].append({"id": iid, "name": name, "args": ""})
+                            self._emit_locked({"type": "tool_name", "text": name})
+                elif event == "response.function_call_arguments.delta":
+                    iid = str(chunk.get("item_id") or chunk.get("call_id") or "")
+                    d = chunk.get("delta")
+                    if iid and d:
+                        slot = next(
+                            (
+                                tc for tc in reversed(live["tool_calls"])
+                                if tc.get("id") == iid and tc.get("name")
+                            ),
+                            None,
+                        )
+                        if slot is not None:
+                            slot["args"] += d
+                            self._emit_locked({"type": "tool_args", "text": d})
+                elif event == "response.function_call_arguments.done":
+                    iid = str(chunk.get("item_id") or chunk.get("call_id") or "")
+                    args = chunk.get("arguments") or ""
+                    if iid and args:
+                        slot = next(
+                            (
+                                tc for tc in reversed(live["tool_calls"])
+                                if tc.get("id") == iid
+                            ),
+                            None,
+                        )
+                        if slot is not None and not slot["args"]:
+                            slot["args"] = args
+                            self._emit_locked({"type": "tool_args", "text": args})
+                elif event == "response.output_item.done":
+                    it = chunk.get("item") or {}
+                    if it.get("type") == "function_call":
+                        iid = str(it.get("id") or it.get("call_id") or "")
+                        name = it.get("name") or ""
+                        args = it.get("arguments") or ""
+                        slot = next(
+                            (
+                                tc for tc in reversed(live["tool_calls"])
+                                if tc.get("id") == iid
+                            ),
+                            None,
+                        )
+                        if slot is None:
+                            live["tool_calls"].append({"id": iid, "name": name, "args": ""})
+                            slot = live["tool_calls"][-1]
+                            self._emit_locked({"type": "tool_name", "text": name})
+                        if args and not slot["args"]:
+                            slot["args"] = args
+                            self._emit_locked({"type": "tool_args", "text": args})
+                return
             try:
                 delta = chunk["choices"][0]["delta"]
             except (KeyError, IndexError, TypeError):
@@ -291,32 +371,27 @@ class RawViewServer:
 
     # ------------------------------------------------------------------
     def start(self) -> None:
-        """启动 HTTP 服务器（后台线程）。"""
-        if self._server is not None:
-            return
-        host, port = self._config.web_host, self._config.web_port
-        handler = self._make_handler()
-        try:
-            self._server = ThreadingHTTPServer((host, port), handler)
-        except OSError as e:
-            console.error(f"调试视图启动失败 {host}:{port}: {e}")
-            return
-        self._thread = threading.Thread(
-            target=self._server.serve_forever, daemon=True, name="raw-view"
-        )
-        self._thread.start()
-        console.mcp(f"调试视图: http://{host}:{port}")
+        """不再启动独立 HTTP 服务器（已集成到 webconsole）。
+
+        调试数据通过 console.rawview_event() → stdout → webconsole LogRing
+        → /api/debug/events SSE 端点实时推送。
+        """
+        console.mcp("调试视图: 已集成（数据流经 console → webconsole）")
 
     # ------------------------------------------------------------------
     # SSE 推送
     # ------------------------------------------------------------------
     def _emit_locked(self, event: dict) -> None:
         """向所有 SSE 订阅者推送增量事件（调用方需持有锁）。"""
-        payload = json.dumps(event, ensure_ascii=False).encode("utf-8")
+        payload = json.dumps(event, ensure_ascii=False)
+        # 输出到 console → 机器人进程 stdout → webconsole LogRing → /api/debug/events 过滤
+        console.rawview_event(payload)
+        # 内存订阅者（保留用于同进程内快照等场景）
+        encoded = payload.encode("utf-8")
         dead = []
         for q in self._subscribers:
             try:
-                q.put_nowait(payload)
+                q.put_nowait(encoded)
             except Exception:
                 dead.append(q)
         for q in dead:

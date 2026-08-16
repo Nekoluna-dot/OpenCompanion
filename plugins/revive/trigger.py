@@ -79,20 +79,20 @@ class ReviveTrigger:
         tool_name = f"{_NAMESPACE}-{name}"
         if not quiet:
             try:
-                console.mcp(f"调用 {tool_name}: {json.dumps(args, ensure_ascii=False)}")
+                console.plugins(f"调用 {tool_name}: {json.dumps(args, ensure_ascii=False)}")
             except (TypeError, ValueError):
-                console.mcp(f"调用 {tool_name}: {args}")
+                console.plugins(f"调用 {tool_name}: {args}")
         raw = self._bot.tools.call_tool(tool_name, args)
         if not quiet_result:
             try:
-                console.mcp(self._summarize(name, raw))
+                console.plugins(self._summarize(name, raw))
             except Exception:
-                console.mcp(f"返回 {tool_name}: {raw[:400]}")
+                console.plugins(f"返回 {tool_name}: {raw[:400]}")
         return raw
 
     @staticmethod
     def _summarize(name: str, raw) -> str:
-        """把 revive 工具返回解析成中文摘要（带缩进、可读）。"""
+        """把 revive 工具返回解析成中文摘要（单行紧凑）。"""
         data = raw
         if isinstance(raw, str):
             try:
@@ -103,20 +103,17 @@ class ReviveTrigger:
         if isinstance(data, dict) and "error" in data:
             return f"返回 {name}: 错误 {data['error']}"
 
-        # 其他工具（record_send / record_reply 等）通用中文摘要
+        # 单行格式：返回 name: k=v k=v ...
         if isinstance(data, dict):
-            lines = [f"返回 {name}:"]
             zh = {
-                "inferred_state_zh": "推断状态",
+                "inferred_state_zh": "状态",
                 "confidence": "置信度",
                 "observations": "观测数",
                 "learned_params": "已学习",
                 "message": "消息",
             }
-            for k, v in data.items():
-                label = zh.get(k, k)
-                lines.append(f"  {label}: {v}")
-            return "\n".join(lines)
+            parts = [f"{zh.get(k, k)}={v}" for k, v in data.items()]
+            return f"返回 {name}: " + " | ".join(parts)
         return f"返回 {name}: {str(data)[:400]}"
 
     def _check_all(self) -> None:
@@ -182,7 +179,7 @@ class ReviveTrigger:
             return
         text = self._status_changed(user_id, decision)
         if text is not None:
-            console.mcp(text)
+            console.plugins(text)
         if not decision.get("should_send"):
             return
         full_id = self._bot.resolve_user_id(user_id)
@@ -248,7 +245,7 @@ class ReviveTrigger:
         else:
             silence_text = f"{silence_h * 60:.0f} 分钟"
         now_str = datetime.now().strftime("%H:%M")
-        console.mcp(
+        console.plugins(
             f"主动问候触发: {user_id} 状态={user_state} 效用={utility:.2f}"
             f" 安静了 {silence_text}"
         )

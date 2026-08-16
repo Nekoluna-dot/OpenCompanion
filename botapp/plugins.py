@@ -2,6 +2,7 @@ import json
 import importlib
 from pathlib import Path
 
+from botapp.config import resolve_python_command
 from botapp.console import console
 
 _BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,12 +28,11 @@ class Plugin:
         """构造给 McpTools 的外部源描述（相对路径已解析为绝对路径）。"""
         if not self.mcp:
             return None
-        command = self.mcp.get("command", "")
         args = self.mcp.get("args", [])
         source = {
             "name": self.name,
             "transport": {
-                "command": self._resolve(command),
+                "command": resolve_python_command(self.mcp.get("command", "")),
                 "args": [self._resolve(a) for a in args],
             },
             "namespace": self.name,

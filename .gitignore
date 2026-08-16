@@ -12,6 +12,10 @@ data/
 conversation/
 *.log
 
+# 意见反馈后端（feedback-php/）：保留 data/.htaccess，其余运行时文件不入库
+!feedback-php/data/
+!feedback-php/data/.htaccess
+
 # 敏感配置（本仓库推送的是示例密钥；真实部署时不要提交自己的密钥）
 # config.ini 里的 api_key 为示例值，请替换为真实密钥
 *.local.ini

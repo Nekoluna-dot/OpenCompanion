@@ -1,9 +1,4 @@
-"""微信平台适配器：封装 weilink SDK，实现 PlatformAdapter 接口。
-
-把 weilink 的登录/长轮询/会话过期重连/收发消息全部封装在此插件内部，
-机器人核心与 main 只依赖 PlatformAdapter 抽象接口，不感知 weilink。
-通过 registry.register_platform("wechat", WeChatAdapter) 注册。
-"""
+"""微信平台适配器：封装 weilink SDK，实现 PlatformAdapter 接口"""
 
 from __future__ import annotations
 
@@ -31,6 +26,11 @@ class WeChatAdapter(PlatformAdapter):
     """weilink 微信平台适配器（会话过期自动重连，token 复用免扫码）。"""
 
     name = "wechat"
+
+    #: 微信登录态/消息库等数据存放位置（weilink SDK 的默认数据目录）
+    data_dir = str(os.path.expanduser(
+        os.path.expandvars(os.environ.get("USERPROFILE", str(os.path.expanduser("~"))))
+    )) + os.sep + ".weilink"
 
     def __init__(self, config) -> None:
         from weilink import WeiLink
@@ -215,17 +215,11 @@ class WeChatAdapter(PlatformAdapter):
             return False, f"发送媒体失败: {e}"
 
     # ── 平台内建工具 / MCP 服务器 ─────────────────────────────
-    _ACCOUNT_TOOLS = ("sessions", "login", "logout", "rename_session", "set_default")
-
     def _tool_functions(self):
-        """返回 weilink 内建工具函数列表（应用账号工具过滤后）。"""
+        """返回 weilink 内建工具函数列表（LLM 侧不暴露，仅 MCP 服务器对外使用）。"""
         import weilink.server.app as server_app
 
-        funcs = list(server_app._TOOL_FUNCTIONS)
-        if not getattr(self._config, "mcp_account_tools_enabled", True):
-            removed = set(self._ACCOUNT_TOOLS)
-            funcs = [fn for fn in funcs if fn.__name__ not in removed]
-        return funcs
+        return list(server_app._TOOL_FUNCTIONS)
 
     def platform_tool_registry(self):
         """构建 weilink 内建工具注册表（含 send/recv 等），应用账号工具过滤。"""

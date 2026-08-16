@@ -14,7 +14,7 @@ decay:
 dehydration:
   api_format: openai_compat
   api_key: sk-REPLACE_ME
-  base_url: https://api.deepseek.com/v1
+  base_url: https://api.deepseek.com/
   max_tokens: 1024
   model: deepseek-v4-flash
   temperature: 0.1

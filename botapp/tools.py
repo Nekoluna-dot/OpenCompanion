@@ -48,8 +48,10 @@ class McpTools:
         if self._registry is None:
             from toolregistry import ToolRegistry
 
-            base = self._platform.platform_tool_registry()
-            self._registry = base if base is not None else ToolRegistry(name="base")
+            # 平台内建工具（weilink send/recv 等）不暴露给 LLM：
+            # 收/发消息由适配器自动处理，媒体发送走 send_media 代码路径。
+            # 外部 MCP 工具源照常接入。
+            self._registry = ToolRegistry(name="base")
             for src in self._config.mcp_sources:
                 self._register_external(src)
         return self._registry
@@ -94,11 +96,12 @@ class McpTools:
     def list_openai_tools(self) -> list[dict]:
 
         schemas = self._get_registry().get_schemas(api_format="openai-chat")
-        filtered = [s for s in schemas if not str(s.get("name", "")).endswith(self._META_SUFFIX)]
         out: list[dict] = []
-        for s in filtered:
+        for s in schemas:
             fn = s.get("function") or {}
             name = str(fn.get("name") or s.get("name") or "")
+            if name.endswith(self._META_SUFFIX):
+                continue
             ns = name.split("-", 1)[0] if "-" in name else ""
             if ns in self._hidden_namespaces:
                 continue

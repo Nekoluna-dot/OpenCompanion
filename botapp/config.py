@@ -1,6 +1,7 @@
 import configparser
 import json
 import os
+import sys
 from pathlib import Path
 
 _BASE_DIR = Path(__file__).resolve().parent.parent
@@ -11,6 +12,31 @@ _MCP_TRANSPORTS = ("sse", "streamable-http")
 _DEFAULT_PROMPT_EXTRA = (
     "none"
 )
+
+# 容器/无 runtime 部署时可指定 Python 解释器路径（覆盖 mcpsources 的 command）
+_BOT_PYTHON_ENV = "BOT_PYTHON"
+
+
+def resolve_python_command(configured: str) -> str:
+    """把配置的 Python 解释器路径解析为当前平台可用的解释器。
+
+    Windows 部署通常把解释器放在 runtime/python/python.exe；
+    该路径不存在时（如 Docker/Linux 部署），依次回退：
+      1. BOT_PYTHON 环境变量指定的路径
+      2. 当前进程的解释器 sys.executable
+    """
+    if not configured:
+        return configured
+    resolved = configured
+    path = Path(configured)
+    if not path.is_absolute() and ("/" in configured or "\\" in configured):
+        resolved = str(_BASE_DIR / configured)
+    if Path(resolved).exists():
+        return resolved
+    env_py = os.environ.get(_BOT_PYTHON_ENV, "").strip()
+    if env_py:
+        return env_py
+    return sys.executable or "python"
 
 # prompt.txt 缺失时 __init__ 阶段的临时占位，随后由 _load_prompt() 覆盖
 _DEFAULT_PROMPT = ""
@@ -43,6 +69,11 @@ class AppConfig:
         self.model = ""
         self.thinking = False
         self.reasoning_effort = "low"
+        # API 类型: chat = Chat Completions(默认,兼容最广)
+        #          responses = Responses API(原生支持联网搜索,需模型与接口支持)
+        self.api_type = "chat"
+        # 联网搜索(仅 api_type=responses 时生效;DeepSeek 按次额外计费)
+        self.search_enabled = False
         self.use_proxy = False
         # 是否接收图片消息并送入 LLM（需模型支持图片输入）
         self.enable_image = False
@@ -61,10 +92,6 @@ class AppConfig:
         self.mcp_host = "127.0.0.1"
         self.mcp_port = 8000
         self.mcp_token = ""
-        # 是否启用 weilink 内建账号管理工具（sessions/login/logout/rename_session/set_default），
-        # 默认 False：禁用，仅暴露 recv/send/download/history
-        #这些工具其实没啥用 反而浪费上下文
-        self.mcp_account_tools_enabled = False
 
         # 外部 MCP 工具源（[mcpsources] 节，可多个）
         # 每项: {"name", "transport", "namespace"}
@@ -130,6 +157,12 @@ class AppConfig:
         self.reasoning_effort = (
             parser.get("llmapi", "reasoning_effort", fallback="low").strip().lower()
         )
+        self.api_type = (
+            parser.get("llmapi", "api_type", fallback="chat").strip().lower()
+        )
+        self.search_enabled = parser.getboolean(
+            "llmapi", "search_enabled", fallback=False
+        )
         self.use_proxy = parser.getboolean("llmapi", "use_proxy", fallback=False)
         self.enable_image = parser.getboolean("llmapi", "enable_image", fallback=False)
         self.enable_video = parser.getboolean("llmapi", "enable_video", fallback=False)
@@ -143,18 +176,21 @@ class AppConfig:
             raise ValueError(
                 f"reasoning_effort 必须是 {', '.join(_REASONING_LEVELS)} 之一。"
             )
+        if self.api_type not in ("chat", "responses"):
+            raise ValueError("api_type 仅支持 chat 或 responses。")
 
     def _load_mcp(self, parser: configparser.ConfigParser) -> None:
         self.mcp_enabled = parser.getboolean("mcp", "enabled", fallback=False)
         self.mcp_transport = parser.get(
             "mcp", "transport", fallback="streamable-http"
         ).strip()
-        self.mcp_host = parser.get("mcp", "host", fallback="127.0.0.1").strip()
+        # 容器部署时用 BOT_MCP_HOST 覆盖 127.0.0.1，使宿主机可访问
+        self.mcp_host = os.environ.get(
+            "BOT_MCP_HOST",
+            parser.get("mcp", "host", fallback="127.0.0.1").strip(),
+        )
         self.mcp_port = parser.getint("mcp", "port", fallback=8000)
         self.mcp_token = parser.get("mcp", "token", fallback="").strip()
-        self.mcp_account_tools_enabled = parser.getboolean(
-            "mcp", "account_tools_enabled", fallback=False
-        )
 
         if self.mcp_transport not in _MCP_TRANSPORTS:
             raise ValueError(
@@ -205,7 +241,7 @@ class AppConfig:
             return p
 
         if isinstance(out.get("command"), str):
-            out["command"] = _resolve(out["command"])
+            out["command"] = resolve_python_command(out["command"])
         args = out.get("args")
         if isinstance(args, list):
             out["args"] = [_resolve(a) if isinstance(a, str) else a for a in args]
@@ -256,7 +292,11 @@ class AppConfig:
 
     def _load_web(self, parser: configparser.ConfigParser) -> None:
         self.web_enabled = parser.getboolean("web", "enabled", fallback=False)
-        self.web_host = parser.get("web", "host", fallback="127.0.0.1").strip()
+        # 容器部署时用 BOT_WEB_HOST 覆盖 127.0.0.1，使宿主机可访问
+        self.web_host = os.environ.get(
+            "BOT_WEB_HOST",
+            parser.get("web", "host", fallback="127.0.0.1").strip(),
+        )
         self.web_port = parser.getint("web", "port", fallback=8080)
         self.web_max_records = parser.getint("web", "max_records", fallback=50)
 
@@ -318,6 +358,8 @@ class AppConfig:
         "thinking": bool,
         "reasoning_effort": str,
         "compact_token_limit": int,
+        "api_type": str,
+        "search_enabled": bool,
     }
 
     @staticmethod
@@ -334,7 +376,8 @@ class AppConfig:
     def set_llmapi(self, key: str, value: str) -> str:
         """修改一个 llmapi 配置项，立即生效并写回 config.ini。
 
-        支持 model / thinking / reasoning_effort / compact_token_limit。
+        支持 model / thinking / reasoning_effort / compact_token_limit
+        / api_type / search_enabled。
         返回给用户的确认文本；非法值抛 ValueError。
         """
         key = key.strip().lower()
@@ -357,6 +400,16 @@ class AppConfig:
                 raise ValueError("compact_token_limit 必须是正整数。")
             self.compact_token_limit = v
             text = str(v)
+        elif key == "api_type":
+            v = value.strip().lower()
+            if v not in ("chat", "responses"):
+                raise ValueError("api_type 仅支持 chat 或 responses。")
+            self.api_type = v
+            text = v
+        elif key == "search_enabled":
+            v = value.strip().lower() in ("1", "true", "yes", "on")
+            self.search_enabled = v
+            text = "true" if v else "false"
         else:  # model
             v = value.strip()
             if not v:

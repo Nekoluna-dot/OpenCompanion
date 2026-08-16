@@ -73,7 +73,14 @@ class Console:
         self._emit("Config", _CYAN, message)
 
     def mcp(self, message: str) -> None:
-        self._emit("MCP", _MAGENTA, message)
+        """向后兼容别名，实际输出 [Plugins] 标签。"""
+        self._emit("Plugins", _MAGENTA, message)
+
+    def plugins(self, message: str) -> None:
+        self._emit("Plugins", _CYAN, message)
+
+    def thinking(self, message: str) -> None:
+        self._emit("Thinking", _CYAN, message)
 
     # ------------------------------------------------------------------
     # 机器人事件
@@ -118,9 +125,34 @@ class Console:
             _CYAN,
             f"等待={ttfb:.2f}s 输出={out:.2f}s 合计={total:.2f}s",
         )
+
+    def token(self, prompt: int, completion: int, cache_hit: int = 0) -> None:
+        if cache_hit:
+            self._emit(
+                "Token",
+                _BLUE,
+                f"输入={prompt}(缓存命中{cache_hit}) 输出={completion} 总计={prompt + completion}",
+            )
+        else:
+            self._emit("Token", _BLUE, f"输入={prompt} 输出={completion} 总计={prompt + completion}")
     # 协议诊断
     def proto(self, method: str, endpoint: str, ms: float) -> None:
         self._emit(f"{method} {endpoint}", _GRAY, f"{ms:.0f} ms")
+
+    # ------------------------------------------------------------------
+    # RawView 调试事件（特殊前缀，供 webconsole /api/debug/events 过滤）
+    # ------------------------------------------------------------------
+    def rawview_event(self, data: str) -> None:
+        # begin 事件包含完整系统提示+工具定义（几万字），日志只显示摘要
+        if '"type":"begin"' in data or '"type": "begin"' in data:
+            try:
+                import json as _j
+                obj = _j.loads(data)
+                obj.pop("context_html", None)
+                data = _j.dumps(obj, ensure_ascii=False)
+            except Exception:
+                pass
+        self._emit("RawView", _MAGENTA, data)
 
 
 console = Console()

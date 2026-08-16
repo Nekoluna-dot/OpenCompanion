@@ -41,6 +41,14 @@ def main() -> None:
     if config.mcp_enabled:
         McpServer(platform, config).start()
 
+    # 网页控制台聊天测试：由控制台以环境变量 BOT_TEST_HTTP_PORT 拉起时启用
+    _test_port = os.environ.get("BOT_TEST_HTTP_PORT", "").strip()
+    if _test_port.isdigit():
+        from botapp.test_http import start_test_server
+
+        if start_test_server(bot, int(_test_port)):
+            console.config(f"聊天测试服务已启动（127.0.0.1:{_test_port}）")
+
     stop_flag = threading.Event()
 
     def _on_sigint(signum: int, frame) -> None:

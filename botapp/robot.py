@@ -1,4 +1,5 @@
 ﻿import json
+import os
 import random
 import re
 import threading
@@ -143,6 +144,8 @@ _LLMAPI_HELP = (
     f"    {_CMD_CONTROL} model=模型名\n"
     f"    {_CMD_CONTROL} thinking=true|false\n"
     f"    {_CMD_CONTROL} reasoning_effort=low|high|max\n"
+    f"    {_CMD_CONTROL} api_type=chat|responses（responses 支持原生联网搜索）\n"
+    f"    {_CMD_CONTROL} search_enabled=true|false（仅 responses 生效，按次计费）\n"
     f"    {_CMD_CONTROL} compact_token_limit=数值（支持 k/万/w 后缀）\n"
     f"  用法示例：{_CMD_CONTROL} thinking=false"
 )
@@ -726,7 +729,7 @@ class OpenCompanion:
                     "content": f"{prompt}\n{extra}\n当前对话用户 ID: {user_id}",
                 },
                 {
-                    "role": "system",
+                    "role": "user",
                     "content": (
                         "[系统指令 - 内部任务，这不是聊天消息，"
                         "不要回复用户]\n"
@@ -740,7 +743,21 @@ class OpenCompanion:
             task_seen: dict = {}
             for _round in range(1, _MAX_AGENT_ROUNDS + 1):
                 console.agent_round(_round)
-                result = self.llm.stream_chat(messages, tools=self._tool_defs)
+
+                # RAW 调试视图：内部任务会话也展示思考/回复/工具调用
+                rawview = self.rawview
+                result = None
+                if rawview is not None:
+                    rawview.begin_stream(user_id, list(messages), self._tool_defs)
+                try:
+                    result = self.llm.stream_chat(
+                        messages,
+                        tools=self._tool_defs,
+                        on_chunk=rawview.on_chunk if rawview is not None else None,
+                    )
+                finally:
+                    if rawview is not None:
+                        rawview.finish_stream(result.raw if result is not None else {})
                 if not result.has_tool_calls:
                     reply = self.markers.process(result.content, user_id=user_id)
                     return reply
@@ -1342,7 +1359,14 @@ class OpenCompanion:
 
     @staticmethod
     def _cpu_usage() -> float:
-        """瞬时 CPU 使用率（%）。标准库实现：两次 GetSystemTimes 采样。"""
+        """瞬时 CPU 使用率（%）。跨平台实现：Windows 用 GetSystemTimes，POSIX 用 /proc/stat。"""
+        if os.name == "nt":
+            return OpenCompanion._cpu_usage_windows()
+        return OpenCompanion._cpu_usage_posix()
+
+    @staticmethod
+    def _cpu_usage_windows() -> float:
+        """Windows：两次 GetSystemTimes 采样差值。"""
         try:
             import ctypes
 
@@ -1381,6 +1405,34 @@ class OpenCompanion:
             if total <= 0:
                 return 0.0
             return 100.0 * (1 - idle / total)
+        except Exception:
+            return -1.0
+
+    @staticmethod
+    def _cpu_usage_posix() -> float:
+        """POSIX：两次 /proc/stat 采样差值（Linux/容器内可用）。"""
+        try:
+            import time as _t
+
+            def _sample():
+                with open("/proc/stat", "r", encoding="utf-8") as f:
+                    parts = f.readline().split()
+                if not parts or not parts[0].startswith("cpu"):
+                    raise OSError("unexpected /proc/stat format")
+                nums = [int(x) for x in parts[1:]]
+                total = sum(nums)
+                # 列: user nice system idle iowait irq softirq steal ...
+                idle = nums[3] + (nums[4] if len(nums) > 4 else 0)
+                return total, idle
+
+            total1, idle1 = _sample()
+            _t.sleep(0.1)
+            total2, idle2 = _sample()
+            dt_total = total2 - total1
+            dt_idle = idle2 - idle1
+            if dt_total <= 0:
+                return 0.0
+            return max(0.0, min(100.0, 100.0 * (1 - dt_idle / dt_total)))
         except Exception:
             return -1.0
 
@@ -1868,13 +1920,12 @@ class OpenCompanion:
         for m in messages:
             role = m.get("role")
             if role == "system":
+                # 只保留长期有效的压缩总结；问候/提醒指令是时间敏感的临时
+                # 指令（含"现在几点"等过期信息），不持久化，避免历史堆积
+                # 与时间误导。当轮会话消息流仍完整（不受影响）。
                 if (
                     isinstance(m.get("content"), str)
-                    and (
-                        m["content"].startswith(_COMPACT_MARK)
-                        or m["content"].startswith(_REMINDER_SYS_MARK)
-                        or m["content"].startswith(_GREET_SYS_MARK)
-                    )
+                    and m["content"].startswith(_COMPACT_MARK)
                 ):
                     history.append(m)
                 continue
