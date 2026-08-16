@@ -21,6 +21,12 @@ _RECONNECT_DELAY_S = 5    # 会话过期后等待几秒再重连（让服务端�
 _RECONNECT_MAX_RETRIES = 5  # 连续重连失败达到该次数后停止，提示人工处理
 _RECONNECT_FAST_SEC = 10  # 判定「快速失败」的时间阈值（秒内又断开）
 
+# 消息回环防护：weilink 的 store 兜底分发会把 bot 自己发出去的消息
+# 当成「对方发来的新消息」重新派发（store_sent 写入的行没有 message_id，
+# 且 store-watch 不做 direction=1 过滤）。这里用「文本等于本 bot 最近
+# 发给同一用户的消息」来识别并丢弃回环，避免无限复读。
+_ECHO_WINDOW_MS = 60_000  # 判定为回环的时间窗口（毫秒）
+
 
 class WeChatAdapter(PlatformAdapter):
     """weilink 微信平台适配器（会话过期自动重连，token 复用免扫码）。"""
@@ -416,9 +422,40 @@ class WeChatAdapter(PlatformAdapter):
             7: ".mp3",
         }.get(encode_type, ".bin")
 
+    def _is_own_echo(self, user_id: str, text: str, now_ms: int | None = None) -> bool:
+        """判断一条入站消息是否本 bot 最近发给同一用户的消息回环。
+
+        weilink 的 store 兜底分发/bot 自身消息回推会把本 bot 发出去的消息
+        当作新入站消息重新派发给 handler。判定依据：文本精确等于本 bot
+        最近发给该用户的消息（send 时 _remember 的条目 msg_id 为 None），
+        且在时间窗口内。完整文本精确匹配 + 限时，误杀用户真实消息的概率极低。
+        """
+        if not text:
+            return False
+        now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        cache = self._recent.get(user_id)
+        if not cache:
+            return False
+        for entry_msg_id, create_time_ms, prev_text, kind in cache:
+            if entry_msg_id is not None:  # 只认本 bot 发出的记录
+                continue
+            if kind != "text" or prev_text != text:
+                continue
+            if create_time_ms and now_ms - create_time_ms <= _ECHO_WINDOW_MS:
+                return True
+        return False
+
     def _dispatch(self, msg) -> None:
         """把 weilink Message 转换为 BotMessage 后交给机器人处理器。"""
         if self._handler is None:
+            return
+
+        # 回环防护：忽略本 bot 自己消息被重新派发回来的入站消息
+        if self._is_own_echo(msg.from_user, msg.text or ""):
+            console.warn(
+                f"丢弃自回环消息（{msg.from_user}）: "
+                f"{str(msg.text or '')[:40]}..."
+            )
             return
 
         text = msg.text or ""
