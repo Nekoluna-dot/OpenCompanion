@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenCompanion 控制台</title>
+<link rel="icon" href="logo-square.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 首次设置密码视图 -->
+<div id="view-setup" class="login-wrap" style="display:none">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="logo-square.png" alt="logo">
+    </div>
+    <h1>首次使用</h1>
+    <p class="muted">请设置后台登录密码（至少 6 位）</p>
+    <div class="login-form">
+      <input id="setup-password" type="password" placeholder="新密码" autocomplete="new-password">
+      <input id="setup-password2" type="password" placeholder="确认密码" autocomplete="new-password">
+      <button id="setup-btn" class="btn primary">设置并进入</button>
+      <div id="setup-error" class="login-error"></div>
+    </div>
+    <div class="login-foot">
+      <a href="https://github.com/Nekoluna-dot/OpenCompanion" target="_blank" rel="noopener">GitHub</a>
+      <span>© 2026 Nekoluna 保留所有权利</span>
+    </div>
+  </div>
+</div>
+
+<!-- 登录视图 -->
+<div id="view-login" class="login-wrap" style="display:none">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="logo-square.png" alt="logo">
+    </div>
+    <h1>OpenCompanion 控制台</h1>
+    <p class="muted">输入登录密码以继续</p>
+    <div class="login-form">
+      <input id="login-token" type="password" placeholder="登录密码" autocomplete="current-password">
+      <button id="login-btn" class="btn primary">登 录</button>
+      <div id="login-error" class="login-error"></div>
+    </div>
+    <div class="login-foot">
+      <a href="https://github.com/Nekoluna-dot/OpenCompanion" target="_blank" rel="noopener">GitHub</a>
+      <span>© 2026 Nekoluna 保留所有权利</span>
+    </div>
+  </div>
+</div>
+
+<!-- 应用壳 -->
+<div id="app" class="app" style="display:none">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img src="logo-horizontal.png" alt="logo">
+    </div>
+    <nav id="nav" class="nav"></nav>
+    <div class="sidebar-foot">
+      <span class="dot" id="sse-dot"></span><span id="sse-text">日志流…</span>
+    </div>
+  </aside>
+
+  <div class="main-col">
+    <header class="topbar">
+      <div>
+        <div class="page-crumb" id="crumb">控制台</div>
+        <div class="page-title" id="page-title">概览</div>
+      </div>
+      <div class="topbar-right">
+        <span class="pill" id="badge">—</span>
+        <a class="pill link" id="ob-link" target="_blank" href="http://127.0.0.1:18001">OmbreBrain 后台</a>
+        <button id="logout-btn" class="btn ghost sm">退出</button>
+      </div>
+    </header>
+    <main class="content" id="page-root"></main>
+    <footer class="page-foot">
+      <a href="https://github.com/Nekoluna-dot/OpenCompanion" target="_blank" rel="noopener">GitHub</a>
+      <span>© 2026 Nekoluna 保留所有权利</span>
+    </footer>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
