@@ -20,6 +20,9 @@ conversation/
 # config.ini 里的 api_key 为示例值，请替换为真实密钥
 *.local.ini
 
+# 一键推送工具的手动排除名单（记录哪些文件选择不提交）
+.pushignore
+
 # 独立子项目（LLM 模型等大目录）
 LLM/
 
