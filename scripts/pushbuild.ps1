@@ -128,6 +128,55 @@ function Clear-Data {
     Write-Host "  用户数据清理完成" -ForegroundColor Green
 }
 
+# ---- 提交描述：按改动文件自动生成建议，可多行补充 ----
+function Get-CommitDescription([string[]]$files) {
+    $summary = New-Object System.Collections.ArrayList
+    $hasBot    = $false; $hasWeb    = $false
+    $hasDock   = $false; $hasMcp    = $false
+    $hasDocs   = $false; $hasCfg    = $false
+    $hasScript = $false; $hasPlug   = $false
+
+    foreach ($f in $files) {
+        $n = $f -replace "\\", "/"
+        if ($n -like "botapp/*") { $hasBot = $true }
+        if ($n -like "botapp/webconsole/*" -or $n -eq "webconsole.py") { $hasWeb = $true }
+        if ($n -like "Dockerfile" -or $n -like "docker-compose.yml" -or $n -like ".github/*") { $hasDock = $true }
+        if ($n -like "MCP/*") { $hasMcp = $true }
+        if ($n -like "docs/*") { $hasDocs = $true }
+        if ($n -like "config.ini" -or $n -like "*.local.ini" -or $n -like "MCP/OB/.env" -or $n -like "MCP/OB/config.yaml") { $hasCfg = $true }
+        if ($n -like "scripts/*" -or $n -like "*.ps1" -or $n -like "*.bat") { $hasScript = $true }
+        if ($n -like "plugins/*") { $hasPlug = $true }
+    }
+    if ($hasBot)  { [void]$summary.Add("核心逻辑") }
+    if ($hasWeb)  { [void]$summary.Add("网页控制台") }
+    if ($hasMcp)  { [void]$summary.Add("MCP 工具") }
+    if ($hasPlug) { [void]$summary.Add("插件") }
+    if ($hasCfg)  { [void]$summary.Add("配置") }
+    if ($hasDock) { [void]$summary.Add("Docker 部署") }
+    if ($hasDocs) { [void]$summary.Add("文档") }
+    if ($hasScript) { [void]$summary.Add("脚本工具") }
+    $auto = if ($summary.Count -gt 0) { "涉及：" + ($summary -join "、") } else { "常规更新" }
+    $auto += "；共 $($files.Count) 个文件："
+    $files | ForEach-Object { $auto += "`n    - " + $_ }
+
+    Write-Host "`n  建议描述（可修改）:" -ForegroundColor Cyan
+    Write-Host ("    " + ($auto -replace "`n", "`n    ")) -ForegroundColor DarkGray
+    $yn = Read-Host "`n  使用建议描述? [Y/n]"
+    if ($yn -match "^(y|yes|是)?$") { return $auto }
+    Write-Host "  输入描述（可多行, 单独一行 . 结束, 空回车跳过）:" -ForegroundColor Cyan
+    $lines = New-Object System.Collections.ArrayList
+    while ($true) {
+        $line = Read-Host "  >"
+        if ($line -eq ".") { break }
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            if ($lines.Count -eq 0) { return "" }
+            break
+        }
+        [void]$lines.Add($line)
+    }
+    return ($lines -join "`n")
+}
+
 # ---- 一键推送 + 触发 Docker 构建 ----
 function Push-Build {
     Write-Head "一键推送 + 触发构建"
@@ -192,15 +241,20 @@ function Push-Build {
     Write-Host "`n  将提交以下文件:" -ForegroundColor Cyan
     $staged | ForEach-Object { Write-Host ("    * " + $_) -ForegroundColor Gray }
 
-    # 4. commit
+    # 4. commit（标题 + 多行描述）
     $branch = git branch --show-current
     $defaultMsg = "update: " + (Get-Date -Format "yyyy-MM-dd HH:mm")
-    $msg = Read-Host "`n  提交信息 (回车用: $defaultMsg)"
+    $msg = Read-Host "`n  提交标题 (回车用: $defaultMsg)"
     if ([string]::IsNullOrWhiteSpace($msg)) { $msg = $defaultMsg }
+    $desc = Get-CommitDescription $staged
     git add -A -- . *> $null
     foreach ($xf in $toExclude) { git reset -q -- $xf *> $null }
     if ($excludes) { foreach ($xf in $excludes) { git reset -q -- $xf *> $null } }
-    git -c i18n.commitEncoding=utf-8 commit -m $msg *> $null
+    if ([string]::IsNullOrWhiteSpace($desc)) {
+        git -c i18n.commitEncoding=utf-8 commit -m $msg *> $null
+    } else {
+        git -c i18n.commitEncoding=utf-8 commit -m $msg -m $desc *> $null
+    }
     if ($LASTEXITCODE -ne 0) { Write-Host "  提交失败" -ForegroundColor Red; return }
 
     # 5. push
@@ -231,7 +285,12 @@ function Tag-Next {
     $suggest = "v$maj.$min.$pat"
     $tag = Read-Host ("  打 tag 触发构建 (回车用: $suggest)")
     if ([string]::IsNullOrWhiteSpace($tag)) { $tag = $suggest }
-    git tag $tag 2>$null
+    $tagDesc = Read-Host "  tag 描述 (回车留空)"
+    if ([string]::IsNullOrWhiteSpace($tagDesc)) {
+        git tag $tag 2>$null
+    } else {
+        git tag -a $tag -m $tagDesc 2>$null
+    }
     git push origin $tag 2>$null
     if ($LASTEXITCODE -ne 0) { Write-Host "  tag 推送失败" -ForegroundColor Red; return }
     Write-Host ("  已打 tag $tag 并推送, GitHub Actions 开始构建镜像~") -ForegroundColor Green
