@@ -15,7 +15,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 项目代码
 COPY . .
 
 EXPOSE 9000 18001

@@ -8,31 +8,26 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
-      # 网页控制台必须对外，其余服务（MCP 8000、调试面板 8080 已删除）
-      # 保持回环监听默认值即可，不映射端口
+      # 网页控制台必须对外，其余服务保持回环监听默认值即可
       - BOT_WEBCONSOLE_HOST=0.0.0.0
-      # 网页控制台访问令牌（强烈建议设置，控制台可停止机器人/删除数据）
+      # 网页控制台访问令牌（控制台可停止机器人/删除数据，建议设置）
       # - BOT_WEBCONSOLE_TOKEN=change-me
-      # 覆盖 mcpsources 里的 runtime/python/python.exe（可选，不设则自动回退容器内 python）
-      # - BOT_PYTHON=/usr/local/bin/python
     ports:
       - "9000:9000"
       # OmbreBrain Dashboard + HTTP MCP（OB 是 bot 的 stdio 子进程，
       # 容器内固定监听 18001，见 MCP/OB/config.yaml host_port: 18001）
       - "18001:18001"
     volumes:
-      # 配置与提示词挂在宿主，改完在网页控制台重启机器人即生效
       - ./config.ini:/app/config.ini
       - ./prompt.txt:/app/prompt.txt
       - ./prompt_extra.txt:/app/prompt_extra.txt
       # OmbreBrain 配置与密钥（镜像内置的是占位符 key，必须挂载真实文件）
       - ./MCP/OB/.env:/app/MCP/OB/.env
       - ./MCP/OB/config.yaml:/app/MCP/OB/config.yaml
-      # 数据持久化
+      - ./MCP/OB/buckets:/app/MCP/OB/buckets
       - ./data:/app/data
       - ./conversation:/app/conversation
       - ./logs:/app/logs
-      # 微信登录会话（token），扫码一次后重启免扫码
       - session:/root/.weilink
 volumes:
   session:

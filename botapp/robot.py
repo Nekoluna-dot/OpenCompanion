@@ -272,12 +272,13 @@ class OpenCompanion:
         time_str = event.get("time", "")
         action = event.get("action", "")
         content = event.get("content", "")
+        promise = content if content else action
         system_extra = (
-            f"[系统主动提醒] 到点了（{time_str}）。你答应过要提醒对方：{action}"
-            + (f"，详情：{content}" if content else "")
-            + "\n现在直接输出提醒内容，系统会自动发送。"
-            "禁止：再说『我设好了提醒』之类的话；调用任何定时/提醒工具；暴露机制。"
-            "像真人一样自然提醒，用中文。"
+            f"你的手机闹钟响了，备注是你当初自己写下的：{action}。"
+            f"现在是 {time_str}，正是你答应对方的时间——当初你答应过：【{promise}】。"
+            "闹钟响了就得兑现。像平时聊天一样把这句话自然发出去，系统会自动发送。"
+            "不要说『我设了闹钟』之类的话；不要调用任何工具；不要暴露任何机制。"
+            "像真人一样开口，用中文，直接输出你要说的话。"
         )
         try:
             self.typing.start(user_id)
@@ -365,27 +366,20 @@ class OpenCompanion:
         time_str = event.get("time", "")
         action = event.get("action", "")
         content = event.get("content", "")
-        if count == 2:
-            # 第一次追催：告知 <stop> 机制存在（从下一次起可用）
+        if count >= 3:
             stop_clause = (
-                "可选项：从你的下一次提醒开始，你可以单独输出 <stop> "
-                "来终止所有后续提醒，比如对方不理你或者继续提醒没有意义的时候。"
-            )
-        elif count >= 3:
-            stop_clause = (
-                "你可以单独输出 <stop> 来终止所有后续提醒，"
-                "比如对方不理你或者继续提醒没有意义的时候。"
+                "如果继续提醒已经没有意义（他显然不会回），"
+                "你可以单独输出 <stop> 结束，系统会关闭后续闹钟，不要再发其他内容。"
             )
         else:
             stop_clause = ""
         system_extra = (
-            f"[系统主动提醒] 到点了（{time_str}），你已提醒过对方：{action}"
-            + (f"，详情：{content}" if content else "")
-            + f"（第 {count} 次）。对方还没回复，可能没看到。"
-            "现在直接再输出一次提醒，比上次更醒目一些。"
-            "禁止：再说『我设好了提醒』之类的话；调用任何定时/提醒工具；暴露机制。"
-            "像真人一样自然提醒，用中文。"
-            + stop_clause
+            f"你的手机闹钟又响了，备注还是当初那句：{action}，这已是第 {count} 次响铃。"
+            f"现在是 {time_str}，你之前已经提醒过他 {count - 1} 次，他还没回，可能没看到。"
+            "这次开口比上次更醒目一点，带一两个具体细节帮他想起这件事。"
+            "不要说『我设了闹钟』之类的话；不要调用任何工具；不要暴露任何机制。"
+            "像真人一样再次开口，用中文，直接输出你要说的话。"
+            + (("\n" + stop_clause) if stop_clause else "")
         )
         try:
             self.typing.start(user_id)

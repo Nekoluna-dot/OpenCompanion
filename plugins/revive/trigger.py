@@ -244,17 +244,20 @@ class ReviveTrigger:
             silence_text = f"{silence_h:.1f} 小时"
         else:
             silence_text = f"{silence_h * 60:.0f} 分钟"
-        now_str = datetime.now().strftime("%H:%M")
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         console.plugins(
             f"主动问候触发: {user_id} 状态={user_state} 效用={utility:.2f}"
             f" 安静了 {silence_text}"
         )
         system_extra = (
-            f"[系统主动问候] 现在 {now_str}，对方已 {silence_text} 没回消息。"
-            "主动发一条全新消息：轻轻催一下、关心一下或找个新话题。"
-            "直接输出这条消息即可，系统会自动发送并记录，不要调用任何工具。"
-            "要求：不顺着对方上一条内容接话；绝不重复自己说过的话；"
-            "要像等了对方一阵子才主动开口；自然，不暴露任何机制；用中文。"
+            f"现在是 {now_str}，你们已经 {silence_text} 没说话了，"
+            "最后一条是有来有回、自然结束的。"
+            "你放下手机等了一会儿还是没忍住，先开口："
+            "找个新话题、问他在干嘛、或者发个表情包试探。"
+            "不硬接太久以前那条；不重复自己说过的话；"
+            "像一个等了一会儿忍不住开口的真人。"
+            "不要提任何机制。"
+            "用中文，直接输出你要说的话。"
         )
         try:
             self._bot.typing.start(user_id)
