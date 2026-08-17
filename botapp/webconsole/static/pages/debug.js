@@ -1,10 +1,10 @@
 "use strict";
 /* 调试视图页：实时 LLM 流式输出（思考/回复/工具/上下文）
 
-数据链路：rawview → console.rawview_event → bot stdout → webconsole LogRing
-→ /api/debug/events SSE → 本页面渲染
+数据链路：rawview._ingest → HTTP POST /api/debug/ingest（回环）
+→ webconsole 独立缓冲 → /api/debug/events SSE → 本页面渲染
 
-不再有独立的 8080 端口，所有数据直接流经 webconsole。
+不写入 bot stdout，日志流保持干净；没有独立的 8080 端口。
 */
 import { api, toast, esc } from "../app.js";
 

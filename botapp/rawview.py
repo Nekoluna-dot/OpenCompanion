@@ -1,18 +1,69 @@
 import html
 import json
+import os
+import queue
 import threading
 import time
+import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from botapp.config import AppConfig
-from botapp.console import console
 
 # 上下文总结记录标记（与 robot._COMPACT_MARK 对应）：
 # 历史中以此为前缀的 system 消息是压缩时生成的总结数据，
 # 在对话消息区用 Summary 样式标记展示。
 _SUMMARY_MARK = "[对话总结]"
+
+# ----------------------------------------------------------------------
+# RawView 调试事件上报通道：不再写 bot stdout（避免日志被大 JSON 刷屏），
+# 改为异步 POST 到 webconsole 的 /api/debug/ingest（127.0.0.1 回环）。
+# webconsole 未启动 / 端口不同时静默丢弃，不影响机器人主流程。
+# ----------------------------------------------------------------------
+
+_INGEST_QUEUE: "queue.Queue[str]" = queue.Queue(maxsize=2048)
+_INGEST_WORKER_STARTED = False
+_INGEST_LOCK = threading.Lock()
+
+
+def _webconsole_port() -> int:
+    try:
+        return int(os.environ.get("BOT_WEBCONSOLE_PORT", "9000") or "9000")
+    except ValueError:
+        return 9000
+
+
+def _ingest_worker() -> None:
+    """后台线程：逐条把 RawView 事件 POST 到 webconsole。"""
+    while True:
+        payload = _INGEST_QUEUE.get()
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{_webconsole_port()}/api/debug/ingest",
+                data=payload.encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                resp.read()
+        except Exception:
+            pass  # webconsole 不在线等场景：静默丢弃
+
+
+def _ingest(payload: str) -> None:
+    """把一条 RawView 事件加入上报队列（非阻塞）。"""
+    global _INGEST_WORKER_STARTED
+    try:
+        _INGEST_QUEUE.put_nowait(payload)
+        with _INGEST_LOCK:
+            if not _INGEST_WORKER_STARTED:
+                threading.Thread(
+                    target=_ingest_worker, name="rawview-ingest", daemon=True
+                ).start()
+                _INGEST_WORKER_STARTED = True
+    except Exception:
+        pass
 
 _PAGE = """<!DOCTYPE html>
 <html lang="zh-CN">
@@ -373,10 +424,10 @@ class RawViewServer:
     def start(self) -> None:
         """不再启动独立 HTTP 服务器（已集成到 webconsole）。
 
-        调试数据通过 console.rawview_event() → stdout → webconsole LogRing
-        → /api/debug/events SSE 端点实时推送。
+        调试数据通过 _ingest() → HTTP POST → webconsole /api/debug/ingest
+        → /api/debug/events SSE 端点实时推送（不写 bot stdout，日志保持干净）。
         """
-        console.mcp("调试视图: 已集成（数据流经 console → webconsole）")
+        pass
 
     # ------------------------------------------------------------------
     # SSE 推送
@@ -384,8 +435,8 @@ class RawViewServer:
     def _emit_locked(self, event: dict) -> None:
         """向所有 SSE 订阅者推送增量事件（调用方需持有锁）。"""
         payload = json.dumps(event, ensure_ascii=False)
-        # 输出到 console → 机器人进程 stdout → webconsole LogRing → /api/debug/events 过滤
-        console.rawview_event(payload)
+        # HTTP 上报 webconsole（不写 stdout，避免日志被 RawView JSON 刷屏）
+        _ingest(payload)
         # 内存订阅者（保留用于同进程内快照等场景）
         encoded = payload.encode("utf-8")
         dead = []

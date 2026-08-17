@@ -139,20 +139,5 @@ class Console:
     def proto(self, method: str, endpoint: str, ms: float) -> None:
         self._emit(f"{method} {endpoint}", _GRAY, f"{ms:.0f} ms")
 
-    # ------------------------------------------------------------------
-    # RawView 调试事件（特殊前缀，供 webconsole /api/debug/events 过滤）
-    # ------------------------------------------------------------------
-    def rawview_event(self, data: str) -> None:
-        # begin 事件包含完整系统提示+工具定义（几万字），日志只显示摘要
-        if '"type":"begin"' in data or '"type": "begin"' in data:
-            try:
-                import json as _j
-                obj = _j.loads(data)
-                obj.pop("context_html", None)
-                data = _j.dumps(obj, ensure_ascii=False)
-            except Exception:
-                pass
-        self._emit("RawView", _MAGENTA, data)
-
 
 console = Console()

@@ -33,7 +33,12 @@ from pathlib import Path
 
 from botapp.console import console
 from botapp.webconsole import config_edit, dataops, obproxy, prompts, stats
-from botapp.webconsole.manager import TEST_HTTP_PORT, BotProcessManager, pid_alive
+from botapp.webconsole.manager import (
+    TEST_HTTP_PORT,
+    BotProcessManager,
+    LogRing,
+    pid_alive,
+)
 from botapp.webconsole.prompts import PromptsManager
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -81,7 +86,8 @@ class WebConsoleServer:
         self.host = host
         self.port = port
         self.token = token
-        self.manager = BotProcessManager()
+        self.manager = BotProcessManager(webconsole_port=self.port)
+        self._rawview = LogRing(maxlen=200)  # RawView 调试事件独立缓冲（不经日志流）
         self.ob = obproxy.ObProxy()
         self.prompts = PromptsManager(_PROJECT_ROOT)
         self._server: ThreadingHTTPServer | None = None
@@ -424,12 +430,21 @@ class WebConsoleServer:
 
             def do_POST(self) -> None:
                 path = self.path.split("?", 1)[0]
-                if path not in ("/api/auth/login", "/api/auth/setup") and not self._authed():
+                if path not in ("/api/auth/login", "/api/auth/setup", "/api/debug/ingest") and not self._authed():
                     self._json({"error": "未授权"}, 401)
                     return
                 body = self._read_body()
                 try:
-                    if path == "/api/auth/login":
+                    if path == "/api/debug/ingest":
+                        # bot 进程回环上报 RawView 调试事件（仅接受本机来源）
+                        client_ip = self.client_address[0] if self.client_address else ""
+                        if client_ip not in ("127.0.0.1", "::1"):
+                            self._json({"error": "只接受本机上报"}, 403)
+                            return
+                        raw = json.dumps(body, ensure_ascii=False) if not isinstance(body, str) else body
+                        server._rawview.append(raw)
+                        self._json({"ok": True})
+                    elif path == "/api/auth/login":
                         self._json(self._api_login(body))
                     elif path == "/api/auth/setup":
                         self._json(self._api_setup(body))
@@ -555,12 +570,12 @@ class WebConsoleServer:
                 finally:
                     server.manager.unsubscribe_logs(q)
 
-            # -- 调试视图 SSE（从日志流过滤 [RawView] 事件，不再代理 8080）--------
+            # -- 调试视图 SSE（订阅独立 RawView 缓冲，不再过滤日志流）--------
             def _sse_debug(self) -> None:
-                """订阅机器人日志流，过滤 [RawView] 标签行，以 SSE 推送给前端。
+                """把 bot 经 /api/debug/ingest 上报的 RawView 事件以 SSE 推送。
 
-                数据链路：rawview._emit_locked → console.rawview_event → bot stdout
-                → manager._pump → LogRing → 本端点过滤 → SSE
+                数据链路：rawview._ingest → HTTP POST /api/debug/ingest
+                → 本端点（独立缓冲）→ SSE
                 """
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -568,10 +583,16 @@ class WebConsoleServer:
                 self.send_header("Connection", "keep-alive")
                 self.send_header("X-Accel-Buffering", "no")
                 self.end_headers()
-                q = server.manager.subscribe_logs()
-                # 前缀长度："[HH:MM:SS] [RawView] " = 固定标记
-                _PREFIX = "] [RawView] "
+                q = server._rawview.subscribe()
                 try:
+                    for line in server._rawview.snapshot(200):
+                        try:
+                            self.wfile.write(
+                                b"data: " + line.encode("utf-8") + b"\n\n"
+                            )
+                        except OSError:
+                            return
+                        self.wfile.flush()
                     while True:
                         try:
                             line = q.get(timeout=25)
@@ -583,35 +604,25 @@ class WebConsoleServer:
                             except OSError:
                                 return
                             continue
-                        idx = line.find(_PREFIX)
-                        if idx < 0:
-                            continue
-                        payload = line[idx + len(_PREFIX):].strip()
-                        if not payload:
-                            continue
                         try:
                             self.wfile.write(
-                                b"data: " + payload.encode("utf-8") + b"\n\n"
+                                b"data: " + line.encode("utf-8") + b"\n\n"
                             )
                             self.wfile.flush()
                         except OSError:
                             return
                 finally:
-                    server.manager.unsubscribe_logs(q)
+                    server._rawview.unsubscribe(q)
 
             def _debug_snapshot(self) -> None:
-                """从日志缓冲中提取最近的 RawView 事件，判断是否有活跃会话。"""
-                lines = server.manager.logs()
-                _PREFIX = "] [RawView] "
+                """从独立 RawView 缓冲提取最近事件，判断是否有活跃会话。"""
+                lines = server._rawview.snapshot()
                 events = []
                 for line in lines:
-                    idx = line.find(_PREFIX)
-                    if idx >= 0:
-                        payload = line[idx + len(_PREFIX):].strip()
-                        try:
-                            events.append(json.loads(payload))
-                        except (json.JSONDecodeError, TypeError):
-                            pass
+                    try:
+                        events.append(json.loads(line))
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                 # 判断最近是否有 begin 事件（无对应 end）
                 has_live = False
                 for ev in reversed(events):

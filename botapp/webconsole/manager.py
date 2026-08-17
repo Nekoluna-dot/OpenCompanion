@@ -125,8 +125,9 @@ class LogRing:
 class BotProcessManager:
     """bot 主进程生命周期管理。"""
 
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, webconsole_port: int = 9000) -> None:
         self._root = Path(root) if root else _ROOT
+        self._webconsole_port = int(webconsole_port)
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
         self._logs = LogRing()
@@ -229,6 +230,8 @@ class BotProcessManager:
                         "PYTHONIOENCODING": "utf-8",
                         "PYTHONUNBUFFERED": "1",
                         "BOT_TEST_HTTP_PORT": str(TEST_HTTP_PORT),
+                        # RawView 调试事件回环上报目标（webconsole 网关端口）
+                        "BOT_WEBCONSOLE_PORT": str(self._webconsole_port),
                     },
                 )
             except OSError as e:
