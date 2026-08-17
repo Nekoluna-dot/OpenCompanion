@@ -105,7 +105,7 @@ class WebConsoleServer:
             import configparser
 
             cp = configparser.ConfigParser()
-            cp.read(_PROJECT_ROOT / "config.ini", encoding="utf-8")
+            cp.read(_PROJECT_ROOT / "config.ini", encoding="utf-8-sig")
             if cp.has_option("webconsole", "feedback_url"):
                 url = url or cp.get("webconsole", "feedback_url", fallback="").strip()
         except Exception:
@@ -200,7 +200,7 @@ class WebConsoleServer:
         try:
             import configparser
             cp = configparser.ConfigParser()
-            cp.read(_PROJECT_ROOT / "config.ini", encoding="utf-8")
+            cp.read(_PROJECT_ROOT / "config.ini", encoding="utf-8-sig")
             if cp.has_section("webconsole") and cp.has_option("webconsole", "auto_start_bot"):
                 auto = cp.getboolean("webconsole", "auto_start_bot")
         except Exception:

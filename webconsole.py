@@ -30,7 +30,7 @@ def _load_webconsole_config() -> dict:
     token = os.environ.get("BOT_WEBCONSOLE_TOKEN", "").strip()
     if _CONFIG_INI.exists():
         cp = configparser.ConfigParser()
-        cp.read(_CONFIG_INI, encoding="utf-8")
+        cp.read(_CONFIG_INI, encoding="utf-8-sig")
         if cp.has_section("webconsole"):
             host = host or cp.get("webconsole", "host", fallback="127.0.0.1").strip()
             port = port or cp.get("webconsole", "port", fallback="9000").strip()

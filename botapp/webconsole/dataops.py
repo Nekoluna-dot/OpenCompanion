@@ -31,7 +31,7 @@ def _platform_name() -> str:
     cp = configparser.ConfigParser()
     try:
         if CONFIG_INI.exists():
-            cp.read(CONFIG_INI, encoding="utf-8")
+            cp.read(CONFIG_INI, encoding="utf-8-sig")
         if cp.has_section("platform"):
             return (cp.get("platform", "name", fallback="wechat") or "wechat").strip()
     except (OSError, configparser.Error, ValueError):

@@ -86,7 +86,7 @@ def read_ini() -> dict:
     values: dict[str, dict[str, str]] = {}
     cp = configparser.ConfigParser()
     if CONFIG_INI.exists():
-        cp.read(CONFIG_INI, encoding="utf-8")
+        cp.read(CONFIG_INI, encoding="utf-8-sig")
     for sec, fields in INI_SECTIONS.items():
         values[sec] = {}
         for key in fields:

@@ -121,7 +121,7 @@ class AppConfig:
             )
 
         parser = configparser.ConfigParser()
-        parser.read(self.config_path, encoding="utf-8")
+        parser.read(self.config_path, encoding="utf-8-sig")
 
         if parser.has_section("platform"):
             self._load_platform(parser)
