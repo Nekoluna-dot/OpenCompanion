@@ -42,6 +42,28 @@ def resolve_python_command(configured: str) -> str:
 _DEFAULT_PROMPT = ""
 
 
+def _preset_file_fallback(base_dir: Path, fname: str) -> Path | None:
+    """根目录 prompt 文件缺失时，从激活预设目录兜底取（返回可用路径或 None）。
+
+    全新部署若根目录缺 prompt.txt / prompt_extra.txt，直接跑 main.py 会读不到
+    系统提示词。这里按网页控制台的预设布局兜底：读 prompts/.active 指向的
+    预设目录，取其中的同名文件；预设目录缺失时退回 prompts/default/。
+    只在根目录文件缺失时触发，绝不覆盖已有文件。
+    """
+    try:
+        prompts = base_dir / "prompts"
+        active = prompts / ".active"
+        name = active.read_text(encoding="utf-8").strip() if active.exists() else "default"
+        if (not name) or ("/" in name) or ("\\" in name) or (".." in name):
+            name = "default"
+        for cand in (prompts / name / fname, prompts / "default" / fname):
+            if cand.exists():
+                return cand
+    except OSError:
+        pass
+    return None
+
+
 class AppConfig:
     """读取 config.ini 与 prompt.txt 的全部运行配置。"""
 
@@ -141,6 +163,7 @@ class AppConfig:
                 "config.ini 的 [llmapi] 节必须填写 base_url、api_key、model。"
             )
         self._load_prompt()
+        self._load_prompt_extra()
 
     def _load_platform(self, parser: configparser.ConfigParser) -> None:
         self.platform = (
@@ -310,19 +333,34 @@ class AppConfig:
         # 相对路径基于项目根目录解析，避免受启动工作目录影响
         self.conversation_dir = str(Path(dir_value) if Path(dir_value).is_absolute() else _BASE_DIR / dir_value)
 
+    def _resolve_prompt_path(self) -> Path:
+        """实际生效的 prompt.txt 路径：根目录优先，缺失时回退激活预设。"""
+        if self.prompt_path.exists():
+            return self.prompt_path
+        alt = _preset_file_fallback(self.prompt_path.parent, "prompt.txt")
+        return alt if alt is not None else self.prompt_path
+
+    def _resolve_prompt_extra_path(self) -> Path | None:
+        """实际生效的 prompt_extra.txt 路径：根目录优先，缺失时回退激活预设。"""
+        if self.prompt_extra_path.exists():
+            return self.prompt_extra_path
+        return _preset_file_fallback(self.prompt_extra_path.parent, "prompt_extra.txt")
+
     def _load_prompt(self) -> None:
-        if not self.prompt_path.exists():
+        path = self._resolve_prompt_path()
+        if not path.exists():
             raise FileNotFoundError(f"未找到系统提示词文件 {self.prompt_path}。")
-        self.system_prompt = self.prompt_path.read_text(encoding="utf-8").strip()
+        self.system_prompt = path.read_text(encoding="utf-8").strip()
 
     def reload_prompt(self) -> str:
         """按需重读 prompt.txt：仅当文件修改时间变化时读盘。
 
         每次对话时调用；文件未变化时直接返回内存缓存，
         变化时重读，使 prompt.txt 修改后无需重启即可生效。
+        （根目录缺失时读取激活预设，见 _resolve_prompt_path）
         """
         try:
-            mtime = self.prompt_path.stat().st_mtime
+            mtime = self._resolve_prompt_path().stat().st_mtime
         except OSError:
             return self.system_prompt
         if getattr(self, "_prompt_mtime", None) != mtime:
@@ -331,18 +369,23 @@ class AppConfig:
         return self.system_prompt
 
     def _load_prompt_extra(self) -> None:
-        """读取 prompt_extra.txt；文件缺失时回退内置默认值。"""
-        if not self.prompt_extra_path.exists():
+        """读取 prompt_extra.txt；文件缺失时回退激活预设，再回退内置默认值。"""
+        path = self._resolve_prompt_extra_path()
+        if path is None or not path.exists():
             return
-        self.prompt_extra = self.prompt_extra_path.read_text(encoding="utf-8").strip()
+        self.prompt_extra = path.read_text(encoding="utf-8").strip()
 
     def reload_prompt_extra(self) -> str:
         """按需重读 prompt_extra.txt（仅文件修改时间变化时读盘）。
 
         独立于 prompt.txt，可单独编辑调试；无需重启即生效。
+        （根目录缺失时读取激活预设，见 _resolve_prompt_extra_path）
         """
+        path = self._resolve_prompt_extra_path()
+        if path is None:
+            return self.prompt_extra
         try:
-            mtime = self.prompt_extra_path.stat().st_mtime
+            mtime = path.stat().st_mtime
         except OSError:
             return self.prompt_extra
         if getattr(self, "_prompt_extra_mtime", None) != mtime:

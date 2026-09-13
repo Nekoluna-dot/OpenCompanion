@@ -111,6 +111,8 @@ class LauncherApp:
         self.log_q: queue.Queue[tuple[str, str]] = queue.Queue()
         self._logfile_pos: dict[str, int] = {}
         self._tail_files: dict[str, str] = {}
+        # 每个被跟踪文件的“未成行残字节”（跨轮次拼接，见 _read_tail）
+        self._tail_pending: dict[str, bytes] = {}
         self._closing = False
         self._manual_stop = False
         self._restart_pending = False
@@ -1094,6 +1096,25 @@ class LauncherApp:
         except OSError:
             pass
 
+    @staticmethod
+    def _align_to_line(path: Path, start: int, size: int) -> int:
+        """把起始字节偏移对齐到行首（\n 之后），避免从多字节字符中间开始读。
+
+        UTF-8 里 \n 是单字节，永远不可能是多字节字符的一部分；从 \n 之后
+        开始读就能保证不会读到半截汉字。窗口内没有换行时直接返回 size
+        （不重放这段，宁缺勿乱码）。
+        """
+        if start <= 0:
+            return 0
+        try:
+            with path.open("rb") as fh:
+                fh.seek(start)
+                window = fh.read(4096)
+        except OSError:
+            return start
+        nl = window.find(b"\n")
+        return start + nl + 1 if nl >= 0 else size
+
     def _ensure_tail(self, path: Path, tag: str) -> None:
         """确保文件被跟踪；从 0 开始（重放已有内容）。"""
         key = str(path)
@@ -1103,9 +1124,12 @@ class LauncherApp:
         self._logfile_pos[key] = 0
         try:
             size = path.stat().st_size
-            # 首次跟踪只显示最近若干行，避免刷屏
+            # 首次跟踪只显示最近若干行，避免刷屏；起始偏移必须对齐到行首，
+            # 否则会从汉字中间开始读、首行出现乱码。
             if size > 0:
-                self._logfile_pos[key] = max(0, size - 4096)
+                self._logfile_pos[key] = self._align_to_line(
+                    path, max(0, size - 4096), size
+                )
         except OSError:
             self._logfile_pos[key] = 0
 
@@ -1118,16 +1142,25 @@ class LauncherApp:
             pos = self._logfile_pos.get(key, 0)
             if size < pos:
                 pos = 0  # 文件被轮换/清空
+                self._tail_pending.pop(key, None)
             with path.open("rb") as fh:
                 fh.seek(pos)
                 chunk = fh.read()
             self._logfile_pos[key] = size
-            if chunk:
-                for raw in chunk.split(b"\n"):
-                    # 保留行首空格（二维码用空格当边框/亮色模块），只去尾部换行
-                    line = raw.decode("utf-8", errors="replace").rstrip()
-                    if line:
-                        self.log_q.put((tag, line))
+            if not chunk:
+                return
+            # 关键：文件在两次轮询之间增长时，chunk 的首/尾都可能落在
+            # 某个多字节字符（中文/emoji）中间。这里先把上次未成行的残
+            # 字节拼上，只按完整行（\n）切分，末尾残料留到下次再拼——
+            # 绝不按字节偏移硬切，从根上消除半截字符导致的乱码/缺字。
+            buf = self._tail_pending.get(key, b"") + chunk
+            parts = buf.split(b"\n")
+            self._tail_pending[key] = parts.pop()  # 最后一段（可能半截）留待下次
+            for raw in parts:
+                # 保留行首空格（二维码用空格当边框/亮色模块），只去尾部换行
+                line = raw.decode("utf-8", errors="replace").rstrip()
+                if line:
+                    self.log_q.put((tag, line))
         except OSError:
             self._logfile_pos[key] = 0
 

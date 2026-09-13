@@ -32,7 +32,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from botapp.console import console
-from botapp.webconsole import config_edit, dataops, obproxy, prompts, stats
+from botapp.webconsole import config_edit, dataops, model_list, obproxy, prompts, stats
 from botapp.webconsole.manager import (
     TEST_HTTP_PORT,
     BotProcessManager,
@@ -188,7 +188,22 @@ class WebConsoleServer:
         self._server.daemon_threads = True
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True, name="webconsole")
         self._thread.start()
+        self._ensure_prompts_active()
         self._auto_start_bot()
+
+    def _ensure_prompts_active(self) -> None:
+        """启动兜底：激活预设的 prompt 若在根目录缺失则补写（详见 PromptsManager）。
+
+        这样全新部署（根目录无 prompt.txt / prompt_extra.txt）也能直接以
+        激活预设运行，无需先到控制台手动点一次"激活"。
+        """
+        try:
+            written = self.prompts.ensure_initial_active()
+        except Exception as e:  # noqa: BLE001
+            console.warn(f"预设初始化失败（不影响启动）: {e}")
+            return
+        if written:
+            console.config(f"已从激活预设补写根目录: {', '.join(written)}")
 
     def _auto_start_bot(self) -> None:
         """webconsole 启动后自动拉起机器人（无需手动点启动）。
@@ -283,6 +298,30 @@ class WebConsoleServer:
                 except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                     pass  # 客户端已断开, 无需再写
 
+            def _send_build_hint(self) -> None:
+                """static/ 未构建时的提示页（源码运行、未跑 npm run build）。"""
+                html = (
+                    "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+                    "<title>控制台未构建</title></head><body style=\"font-family:sans-serif;"
+                    "max-width:640px;margin:80px auto;line-height:1.7;color:#333;\">"
+                    "<h2>网页控制台尚未构建</h2>"
+                    "<p>前端是 Vue 3 + Vite 工程，构建产物不入库，需要先编译：</p>"
+                    "<pre style=\"background:#f4f4f4;padding:12px;border-radius:6px;\">"
+                    "cd botapp/webconsole/webui\nnpm install\nnpm run build</pre>"
+                    "<p>构建后会生成 <code>botapp/webconsole/static/</code>，刷新本页即可。</p>"
+                    "<p>Docker 部署无需手动构建（镜像构建时已自动编译）。</p>"
+                    "</body></html>"
+                )
+                body = html.encode("utf-8")
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass
+
             def _read_body(self) -> dict:
                 length = int(self.headers.get("Content-Length") or 0)
                 if length <= 0:
@@ -300,6 +339,10 @@ class WebConsoleServer:
                     self.send_error(403)
                     return
                 if not path.is_file():
+                    # 前端产物未构建（源码运行且没跑过 npm run build）：给可读提示
+                    if not (_STATIC_DIR / "index.html").is_file():
+                        self._send_build_hint()
+                        return
                     self.send_error(404)
                     return
                 body = path.read_bytes()
@@ -338,7 +381,10 @@ class WebConsoleServer:
                     rest = path[len("/api/prompts/"):]
                     # 排除 activate/delete(那些是 POST)
                     if "/" not in rest and rest:
-                        self._json(server.prompts.read_preset(rest))
+                        try:
+                            self._json(server.prompts.read_preset(rest))
+                        except (FileNotFoundError, ValueError) as e:
+                            self._json({"error": str(e)}, 404)
                         return
                     self._json({"error": "not found"}, 404)
                     return
@@ -372,6 +418,11 @@ class WebConsoleServer:
                     self._json(config_edit.read_ini())
                 elif path == "/api/config/yaml":
                     self._json(config_edit.read_yaml())
+                elif path == "/api/llm/models":
+                    qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+                    params = {k: urllib.parse.unquote(v) for k, v in
+                              re.findall(r"[?&]([^=]+)=([^&]*)", "?" + qs)}
+                    self._json(self._api_llm_models(params))
                 elif path == "/api/data/paths":
                     self._json({"paths": dataops.data_paths()})
                 elif path == "/api/ports":
@@ -471,6 +522,8 @@ class WebConsoleServer:
                     elif path == "/api/config/yaml":
                         config_edit.save_yaml(body.get("values"), body.get("raw"))
                         self._json({"result": "ok"})
+                    elif path == "/api/llm/models":
+                        self._json(self._api_llm_models(body))
                     elif path == "/api/data/delete":
                         result = dataops.delete_path(str(body.get("target", "")))
                         self._json({"result": result})
@@ -637,6 +690,16 @@ class WebConsoleServer:
                     "event_count": len(events),
                     "bot_running": server.manager.state().get("running", False),
                 })
+
+            def _api_llm_models(self, params: dict) -> dict:
+                """拉取 OpenAI 兼容 API 的可用模型列表（配置页 model 字段下拉用）。
+
+                base_url 可直接填完整端点（.../chat/completions、.../responses），
+                由 model_list 推导出 /v1/models；失败返回 {"ok": False, "error": ...}。
+                """
+                base_url = str(params.get("base_url", "") or "").strip()
+                api_key = str(params.get("api_key", "") or "").strip()
+                return model_list.fetch_models(base_url, api_key)
 
             def _api_state(self) -> dict:
                 st = server.manager.state()
@@ -915,8 +978,10 @@ def _port_pids(port: int) -> list[int]:
                 timeout=15,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            # Windows 下 netstat 输出可能是 GBK 编码(含中文), 不能用 text=True
-            out = (proc.stdout or b"").decode("utf-8", errors="ignore")
+            # 中文 Windows 下 netstat 输出是 GBK(cp936)；用 UTF-8 解会把中文
+            # 列头变成乱码。这里按 GBK 解（非 GBK 环境退化为 replace，不影响
+            # 解析 ASCII 的 LISTENING 行与端口号）。
+            out = (proc.stdout or b"").decode("gbk", errors="replace")
         except (OSError, subprocess.SubprocessError):
             return []
         pids = []

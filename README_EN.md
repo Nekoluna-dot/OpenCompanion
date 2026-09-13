@@ -3,7 +3,7 @@
 
 <img width="3136" height="1344" alt="rmb20260806020137rfe" src="https://github.com/user-attachments/assets/8fc42ab1-c970-437f-b54a-ff025665e68b" />
 
-An open‑source, multi‑platform AI companion chatbot: chats with you like a friend, remembers what you’ve said, occasionally initiates conversations, checks weather, searches Bilibili videos, keeps to‑do lists, and sets reminders. It has personality, moods, and a private diary — it’s both a companion and a helper. Whether as a boyfriend, girlfriend, or best friend, it fits the role.
+An open‑source, multi‑platform AI companion chatbot: chats with you like a friend, remembers what you’ve said, occasionally initiates conversations, keeps to‑do lists, and sets reminders. It has personality, moods, and a private diary — it’s both a companion and a helper. Whether as a boyfriend, girlfriend, or best friend, it fits the role.
 
 > 💙 Companionship and capability are never opposites.
 
@@ -15,7 +15,7 @@ An open‑source, multi‑platform AI companion chatbot: chats with you like a f
 - 🧠 **Long‑Term Memory** – Built‑in long‑term emotional memory engine: important facts and your preferences are recorded; even after a long silence, it will “suddenly remember” and bring them up.
 - ✨ **Proactive Agent** – If you ignore it for too long, it will start a conversation on its own; scheduled tasks are reminded and followed up punctually.
 - 📔 **Private Diary** – Every night before “sleeping,” it writes down its inner thoughts in a diary and letters that only it can see, gradually processing them.
-- 🔧 **MCP Tool Sources** – Freely connect tool sources: weather, location, Bilibili search, user profiles, event logs, topic interests, and more.
+- 🔧 **MCP Tool Sources** – Freely connect tool sources: user profiles, event logs, long‑term memory, and more.
 - 🧩 **Plugin System** – Standard plugin mechanism (manifest + standalone MCP service + event hooks); currently ships with a proactive greeting engine plugin.
 - 🔄 **Multi‑Platform Adapter** – Platform communication abstraction layer, allowing the same core bot to interface with any platform adapter; currently built‑in: **WeChat (iLink)**.
 - 🛡️ **Fully Local Data** – All conversations and memories are stored only on your own computer; `/清除记忆` (Clear Memory) permanently removes all memories after a second confirmation.

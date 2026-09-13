@@ -84,6 +84,36 @@ class PromptsManager:
         p = self._dir / name
         return p
 
+    def ensure_initial_active(self) -> str:
+        """首次启动兜底：把激活预设的 prompt 写入根目录（避免"必须手动激活"）。
+
+        背景：网页控制台创建 default/ 预设时只是把根目录 prompt.txt /
+        prompt_extra.txt **复制**进去，并不会主动回写根目录。因此若根目录的
+        prompt.txt / prompt_extra.txt 缺失（全新部署、Docker 挂载了空的
+        prompt.txt 等），机器人会因为读不到系统提示词而崩溃或跑空人设，
+        必须到控制台手动点一次"激活"才会生成根文件。
+
+        本方法在服务启动时调用：激活预设的对应文件一旦在根目录缺失就补写。
+        根目录**已存在**的文件一律不动（根目录始终是"当前生效"的权威来源），
+        所以不会覆盖用户的手动修改，也不会改变已激活预设的语义。
+        返回补写的文件名列表（无补写时为空）。
+        """
+        name = self._read_active()
+        try:
+            p = self._preset_dir(name)
+        except ValueError:
+            return []
+        if not p.exists():
+            return []
+        written: list[str] = []
+        for fname in ("prompt.txt", "prompt_extra.txt"):
+            src = p / fname
+            dst = self._root / fname
+            if src.exists() and not dst.exists():
+                dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+                written.append(fname)
+        return written
+
     # -- 对外 API ----------------------------------------------------
     def list_presets(self) -> list[dict]:
         active = self._read_active()

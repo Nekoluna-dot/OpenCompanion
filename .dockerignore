@@ -13,7 +13,9 @@ logs
 *.log
 *.local.ini
 LLM
-TTS
 testtool
 docs
 scripts
+# 前端：依赖与构建产物都在镜像内生成，避免把本机副本带进构建上下文
+botapp/webconsole/webui/node_modules
+botapp/webconsole/static

@@ -1,4 +1,5 @@
 import ctypes
+import io
 import os
 import sys
 import time
@@ -35,9 +36,31 @@ def _supports_color(stream) -> bool:
     return True
 
 
+def make_stream_encoding_safe(stream) -> None:
+    """让控制台流不会因无法编码的字符而抛 UnicodeEncodeError。
+
+    Windows 中文控制台默认编码为 GBK(cp936)，而二维码块字符（▀▐▪…）、
+    emoji 等在 GBK 下无法编码——直接 print 会抛 UnicodeEncodeError，
+    中断扫码/日志输出，甚至让机器人进程崩溃。
+
+    这里只把错误处理器改为 replace（不改动编码本身）：中文仍按控制台
+    原编码正常显示，无法表示的字符降级为 '?'，保证输出与主流程不中断。
+    """
+    if not isinstance(stream, io.TextIOWrapper):
+        return
+    try:
+        stream.reconfigure(errors="replace")
+    except Exception:
+        pass
+
+
 class Console:
     def __init__(self, use_color: bool | None = None, stream=None) -> None:
         self._stream = stream or sys.stdout
+        if stream is None:
+            # 未显式传入流时（即真实的 sys.stdout）：确保不会因 emoji/块字符
+            # 在 GBK 控制台上抛异常（详见 make_stream_encoding_safe）。
+            make_stream_encoding_safe(self._stream)
         if use_color is None:
             use_color = _supports_color(self._stream)
         self.use_color = use_color
@@ -55,7 +78,19 @@ class Console:
             # 整个行按类别着色，标签加粗
             tag_s = f"{_BOLD}[{tag}]{_RESET}"
             line = f"{color}[{ts}]{_RESET} {tag_s} {self._paint(message, color)}"
-        print(line, file=self._stream, flush=True)
+        try:
+            print(line, file=self._stream, flush=True)
+        except UnicodeEncodeError:
+            # 兜底：极端情况下流仍无法编码（reconfigure 未生效/自定义流），
+            # 按目标编码降级替换不可编码字符，绝不因日志输出中断主流程。
+            enc = getattr(self._stream, "encoding", None) or "utf-8"
+            safe = line.encode(enc, errors="replace").decode(enc, errors="replace")
+            try:
+                print(safe, file=self._stream, flush=True)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # 通用

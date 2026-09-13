@@ -30,9 +30,21 @@ run_pushbuild.bat
 # 独立子项目（LLM 模型等大目录）
 LLM/
 
+# 本机内嵌 Python 运行时 / 便携运行时（体积数百 MB，不入库）
+python/
+runtime/
+
+# 前端工程：依赖与构建产物都不入库
+# - node_modules/ 本地 npm install 生成
+# - static/      由 CI / Docker 构建阶段（见 Dockerfile）或本地 npm run build 生成
+botapp/webconsole/webui/node_modules/
+botapp/webconsole/static/
+
+# OmbreBrain 运行时记忆数据
+MCP/OB/buckets/
+
 # 系统文件
 Thumbs.db
 .DS_Store
 
 *.bak
-bili_credential*

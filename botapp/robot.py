@@ -11,6 +11,7 @@ from botapp.console import console
 from botapp.llm import LLMClient
 from botapp.messenger import MessageSender
 from botapp.platform.base import BotMessage, PlatformAdapter, SendQuotaExhausted
+from botapp.reply_sanitizer import repair_reply, split_reply
 from botapp.store import ConversationStore
 from botapp.tools import McpTools, _BASE_DIR
 from botapp.typing import TypingIndicator
@@ -633,13 +634,7 @@ class OpenCompanion:
            否则只按 <SEP> 切分。
         每条 trim 后过滤空段；无分隔符时返回整条作为单条消息。
         """
-        if getattr(self._config, "clean_paren", True):
-            reply = _PAREN_RE.sub("", reply)
-        if getattr(self._config, "split_newline", False):
-            parts = [p.strip() for p in re.split(r"<SEP>|\n+", reply)]
-        else:
-            parts = [p.strip() for p in reply.split(_SEP)]
-        return [p for p in parts if p]
+        return split_reply(reply, self._config)
 
     @staticmethod
     def _sep_delay(part: str, base_chars: int) -> float:
@@ -1119,7 +1114,7 @@ class OpenCompanion:
             f"清除记忆将删除与你有关的全部内容：\n"
             f"  · 对话历史存档\n"
             f"  · 用户档案（{_CMD_CONTROL} 记录的性格/爱好/待办等）\n"
-            f"  · 话题兴趣、待办清单、日程事件\n"
+            f"  · 待办清单、日程事件\n"
             f"  · 平台侧消息记录、语音文件\n"
             f"  · 长期情感记忆（全部记忆数据，无论谁记录的）\n"
             f"  此操作不可恢复。确认请回复：{_CMD_CONFIRM_FORGET}\n"
@@ -1612,7 +1607,7 @@ class OpenCompanion:
     def _handle_auto_send(self, user_id: str, output: str) -> str:
         """识别工具返回里的 auto_send 标记，直接发送媒体并改写给 LLM 的结果。
 
-        MCP 工具（如 tts）生成媒体后返回
+        MCP 工具生成媒体后返回
         {"auto_send": {"kind": "voice"|"image"|..., "path": "..."}}，
         bot 直接调用平台适配器的媒体发送把媒体发给当前用户，不再让 LLM
         二次调用 send，节省一次 agent 往返。返回给 LLM 的文本改为提示
@@ -1724,6 +1719,7 @@ class OpenCompanion:
                 # 特殊标记（<dream> 等）：先执行系统动作并剥掉标记，
                 # 再处理 <none>（选择不回复）
                 reply = self.markers.process(reply, user_id=user_id)
+                reply = repair_reply(reply)
                 if reply.strip() != _NONE_TAG:
                     messages.append({"role": "assistant", "content": reply})
                 if persist:

@@ -415,34 +415,58 @@ class LLMClient:
                     continue
                 raw_chunks.append(data)
 
+                # 事件名：优先取 SSE 的 `event:` 行；部分 OpenAI 兼容代理
+                # （如本地 CodeBuddy 代理 8787）不发 `event:` 行，只把事件类型
+                # 写在 JSON 的 "type" 字段里。此时回退用 data["type"]，
+                # 否则 cur_event 恒为空 → 所有分支都不命中 → 回复永远为空。
+                ev = cur_event
+                if isinstance(data, dict):
+                    dtype = data.get("type")
+                    if not ev and isinstance(dtype, str):
+                        ev = dtype
+                    if isinstance(ev, str) and ev and not dtype:
+                        data["type"] = ev
+
                 if on_chunk is not None:
-                    # 把 SSE event 名注入 data，让下游（rawview）能按类型分发
-                    if isinstance(data, dict) and not data.get("type"):
-                        data["type"] = cur_event
+                    # 把事件名注入 data，让下游（rawview）能按类型分发
                     on_chunk(data)
 
-                if cur_event == "response.output_text.delta":
+                if ev == "response.output_text.delta":
                     d = data.get("delta")
                     if d:
                         reply_parts.append(d)
-                elif cur_event == "response.reasoning_text.delta":
+                elif ev == "response.output_text.done":
+                    # 兼容只给整段文本、不发 delta 的实现（已收 delta 则不重复）
+                    t = data.get("text")
+                    if t and not reply_parts:
+                        reply_parts.append(t)
+                elif ev == "response.reasoning_text.delta":
                     d = data.get("delta")
                     if d:
                         thinking_parts.append(d)
-                elif cur_event == "response.output_item.added":
+                elif ev == "response.reasoning_text.done":
+                    t = data.get("text")
+                    if t and not thinking_parts:
+                        thinking_parts.append(t)
+                elif ev == "response.output_item.added":
                     it = data.get("item") or {}
                     if it.get("type") == "function_call":
                         iid = it.get("id") or it.get("call_id") or str(len(tool_calls))
                         tool_calls.setdefault(iid, {
                             "id": iid, "name": it.get("name", ""), "arguments": "",
                         })
-                elif cur_event == "response.function_call_arguments.delta":
+                elif ev == "response.function_call_arguments.delta":
                     iid = data.get("item_id") or data.get("call_id")
                     if iid and iid in tool_calls:
                         d = data.get("delta")
                         if d:
                             tool_calls[iid]["arguments"] += d
-                elif cur_event == "response.output_item.done":
+                elif ev == "response.function_call_arguments.done":
+                    iid = data.get("item_id") or data.get("call_id")
+                    slot = tool_calls.get(iid) if iid else None
+                    if slot is not None and not slot["arguments"]:
+                        slot["arguments"] = data.get("arguments") or ""
+                elif ev == "response.output_item.done":
                     it = data.get("item") or {}
                     if it.get("type") == "function_call":
                         iid = it.get("id") or it.get("call_id")
@@ -451,27 +475,32 @@ class LLMClient:
                         })
                         if not slot["arguments"]:
                             slot["arguments"] = it.get("arguments") or ""
-                elif cur_event == "response.web_search_call.searching":
+                elif ev == "response.web_search_call.searching":
                     for q in (data.get("queries") or []):
                         qq = q.get("query") if isinstance(q, dict) else q
                         if qq and qq not in web_search_queries:
                             web_search_queries.append(qq)
                     if web_search_queries:
                         console.mcp("联网搜索: " + " / ".join(web_search_queries))
-                elif cur_event == "response.completed":
+                elif ev == "response.completed":
                     finish_reason = data.get("status") or "completed"
                     resp_obj = data.get("response") or {}
                     u = resp_obj.get("usage")
                     if isinstance(u, dict):
                         usage = u
                     break
-                elif cur_event == "response.incomplete":
+                elif ev == "response.incomplete":
                     finish_reason = "incomplete"
                     error_msg = str(data)[:300]
                     break
-                elif cur_event == "response.failed":
+                elif ev == "response.failed":
                     finish_reason = "failed"
                     error_msg = str(data.get("error") or data)[:500]
+                    break
+                elif ev in ("error", "response.error"):
+                    # 部分兼容代理在上游出错时只发一个 type=error 事件后关闭流
+                    finish_reason = "error"
+                    error_msg = str(data.get("error") or data.get("message") or data)[:500]
                     break
 
         calls: list[dict] = []
@@ -483,6 +512,15 @@ class LLMClient:
                 args = {}
             calls.append({"id": slot["id"], "name": slot["name"], "arguments": args})
 
+        if not reply_parts and not calls and not error_msg:
+            first_type = ""
+            if raw_chunks and isinstance(raw_chunks[0], dict):
+                first_type = str(raw_chunks[0].get("type", ""))
+            console.warn(
+                "Responses API 未解析到任何输出（回复为空）：可能是兼容代理"
+                "未按标准返回 response.output_text.delta 事件。"
+                f" 收到 {len(raw_chunks)} 个事件，首个事件类型={first_type or '?'}"
+            )
         if error_msg:
             console.warn(f"Responses API 异常: {finish_reason} {error_msg}")
 
