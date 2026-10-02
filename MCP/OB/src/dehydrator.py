@@ -290,6 +290,8 @@ class Dehydrator:
         # 思考，关掉它既修了空输出、又更快更省。设为 None 可彻底不发该字段（兼容
         # 不支持 thinkingConfig 的老模型）。
         self.thinking_budget = dehy_cfg.get("thinking_budget", 0)
+        # ssl_verify: false 时跳过 HTTPS 证书校验（自签证书/内网 IP 地址不匹配场景）
+        self.ssl_verify = bool(dehy_cfg.get("ssl_verify", False))
 
         # --- Human display name / 人类一方的称呼 ---
         # 注入脱水/合并的「视角铁律」：原文里人类那一方统一还原为这个名字，
@@ -303,10 +305,17 @@ class Dehydrator:
         # --- 初始化 OpenAI 兼容客户端（仅 openai_compat 格式使用）---
         self.client: Optional[AsyncOpenAI] = None
         if self.api_available and self.api_format == "openai_compat":
+            http_client = None
+            if not self.ssl_verify:
+                import httpx as _httpx
+                http_client = _httpx.AsyncClient(
+                    timeout=self.timeout_seconds, verify=False
+                )
             self.client = AsyncOpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
                 timeout=self.timeout_seconds,
+                http_client=http_client,
             )
 
         # --- SQLite dehydration cache ---
@@ -502,7 +511,9 @@ class Dehydrator:
         # 关闭/限制思考预算（见 __init__ 的 thinking_budget 说明）。
         if self.thinking_budget is not None:
             payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": self.thinking_budget}
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds, verify=self.ssl_verify
+        ) as client:
             r = await client.post(url, params={"key": self.api_key}, json=payload)
             r.raise_for_status()
         data = r.json()
@@ -538,7 +549,9 @@ class Dehydrator:
             "messages": [{"role": "user", "content": user}],
             "temperature": temperature if temperature is not None else self.temperature,
         }
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds, verify=self.ssl_verify
+        ) as client:
             r = await client.post(url, headers=headers, json=payload)
             r.raise_for_status()
         data = r.json()

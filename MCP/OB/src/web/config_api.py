@@ -480,7 +480,8 @@ def register(mcp) -> None:
             import httpx as _httpx
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             payload = {"model": model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}
-            async with _httpx.AsyncClient(timeout=15) as client:
+            _verify = bool(dehyd.get("ssl_verify", False))
+            async with _httpx.AsyncClient(timeout=15, verify=_verify) as client:
                 r = await client.post(f"{base_url.rstrip('/')}/chat/completions", json=payload, headers=headers)
             if r.status_code in (200, 201):
                 return JSONResponse({"ok": True, "message": "API Key 有效 ✓"})
@@ -578,11 +579,12 @@ def register(mcp) -> None:
 
         try:
             models: list[str] = []
+            _verify = bool(sh.config.get("dehydration", {}).get("ssl_verify", False))
             if api_format in ("gemini", "gemini_embed"):
                 # gemini → generateContent models；gemini_embed → embedContent models
                 method_filter = "embedContent" if api_format == "gemini_embed" else "generateContent"
                 url = "https://generativelanguage.googleapis.com/v1beta/models"
-                async with httpx.AsyncClient(timeout=10.0) as c:
+                async with httpx.AsyncClient(timeout=10.0, verify=_verify) as c:
                     r = await c.get(url, params={"key": api_key, "pageSize": 200})
                 r.raise_for_status()
                 for m in r.json().get("models", []):
@@ -591,7 +593,7 @@ def register(mcp) -> None:
             elif api_format == "anthropic":
                 ant_base = base_url.rstrip("/") if base_url else "https://api.anthropic.com"
                 headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-                async with httpx.AsyncClient(timeout=10.0) as c:
+                async with httpx.AsyncClient(timeout=10.0, verify=_verify) as c:
                     r = await c.get(f"{ant_base}/v1/models", headers=headers)
                 r.raise_for_status()
                 models = [m.get("id", "") for m in r.json().get("data", []) if m.get("id")]
@@ -599,7 +601,7 @@ def register(mcp) -> None:
                 if not base_url:
                     return JSONResponse({"ok": False, "error": "openai_compat 格式需要 base_url"}, status_code=400)
                 headers_oai = {"Authorization": f"Bearer {api_key}"}
-                async with httpx.AsyncClient(timeout=10.0) as c:
+                async with httpx.AsyncClient(timeout=10.0, verify=_verify) as c:
                     r = await c.get(f"{base_url.rstrip('/')}/models", headers=headers_oai)
                 r.raise_for_status()
                 models = sorted(m.get("id", "") for m in r.json().get("data", []) if m.get("id"))

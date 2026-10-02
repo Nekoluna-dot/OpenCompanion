@@ -19,6 +19,7 @@ dehydration:
   model: deepseek-v4-flash
   temperature: 0.1
   timeout_seconds: 120
+  ssl_verify: false
 embedding:
   api_format: openai_compat
   api_key: sk-REPLACE_ME
@@ -34,6 +35,7 @@ embedding:
   retry_base_seconds: 5
   retry_max_seconds: 300
   timeout_seconds: 120
+  ssl_verify: false
 hooks:
   allow_public: false
   token: ''

@@ -168,10 +168,13 @@ class APIEmbeddingEngine(BaseEmbeddingEngine):
         model: str,
         dim: int = _GEMINI_DEFAULT_DIM,
         timeout_seconds: float = _API_TIMEOUT_SECONDS,
+        ssl_verify: bool = False,
     ):
         self.api_key = api_key
         self.base_url = base_url
         self.timeout_seconds = positive_float(timeout_seconds, _API_TIMEOUT_SECONDS)
+        # ssl_verify=False 时跳过 HTTPS 证书校验（自签证书/内网 IP 地址不匹配场景）
+        self.ssl_verify = bool(ssl_verify)
         # Google's OpenAI-compatible endpoint wants OpenAI-style bare model IDs.
         # Native REST uses the "models/" resource prefix, so normalize pasted
         # native IDs here before calling embeddings.create().
@@ -188,7 +191,11 @@ class APIEmbeddingEngine(BaseEmbeddingEngine):
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
-            http_client=httpx.AsyncClient(timeout=self.timeout_seconds, trust_env=not _is_local_host),
+            http_client=httpx.AsyncClient(
+                timeout=self.timeout_seconds,
+                trust_env=not _is_local_host,
+                verify=self.ssl_verify,
+            ),
         )
 
     def model_name(self) -> str:
@@ -433,6 +440,7 @@ class EmbeddingEngine:
                 model=model,
                 dim=dim,
                 timeout_seconds=timeout_seconds,
+                ssl_verify=bool(embed_cfg.get("ssl_verify", False)),
             )
 
         self.model = self._backend.model_name()
