@@ -1,0 +1,50 @@
+# 虚拟环境
+.venv/
+venv/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 运行时数据（对话/状态/学习数据）
+data/
+conversation/
+*.log
+
+# 意见反馈后端（feedback-php/）：保留 data/.htaccess，其余运行时文件不入库
+!feedback-php/data/
+!feedback-php/data/.htaccess
+
+# 敏感配置（本仓库推送的是示例密钥；真实部署时不要提交自己的密钥）
+# config.ini 里的 api_key 为示例值，请替换为真实密钥
+*.local.ini
+
+# 一键推送工具的手动排除名单（记录哪些文件选择不提交）
+.pushignore
+
+# 本地维护脚本（含路径/工具，不公开）
+scripts/pushbuild.ps1
+run_pushbuild.bat
+
+# 独立子项目（LLM 模型等大目录）
+LLM/
+
+# 本机内嵌 Python 运行时 / 便携运行时（体积数百 MB，不入库）
+python/
+runtime/
+
+# 前端工程：依赖与构建产物都不入库
+# - node_modules/ 本地 npm install 生成
+# - static/      由 CI / Docker 构建阶段（见 Dockerfile）或本地 npm run build 生成
+botapp/webconsole/webui/node_modules/
+botapp/webconsole/static/
+
+# OmbreBrain 运行时记忆数据
+MCP/OB/buckets/
+
+# 系统文件
+Thumbs.db
+.DS_Store
+
+*.bak

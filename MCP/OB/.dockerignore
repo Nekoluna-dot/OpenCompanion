@@ -1,0 +1,64 @@
+# ============================================================
+# Docker 构建上下文排除清单
+# 为什么需要：Dockerfile 的 COPY 是选择性的（只 src/ frontend/ VERSION 等），
+# 但「构建上下文」会把整个 OmbreBrain/ 目录打包发给 builder。没有这个文件时，
+# .venv_test（~400MB）、.git、buckets 数据全被塞进上下文 → 上传/构建在
+# PaaS（Zeabur 等）上可能超时或 OOM，表现为「卡在 COPY frontend/（dashboard.html）」。
+# 这里把构建用不到的全部排除，让上下文只剩源码 + 前端 + 少量配置。
+# ============================================================
+
+# Python 虚拟环境 / 缓存（最大头，必排）
+.venv_test/
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 版本控制与 IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# 运行期数据 / 持久卷（不该进镜像；含用户记忆，也避免泄密）
+buckets/
+*.db
+*.sqlite
+
+# 本地密钥 / 配置（绝不进上下文）
+.env
+.env.*
+config.yaml
+
+# 文档 / 测试 / 部署清单
+# docs/ 默认整体排除（内部设计稿 docs/superpowers、docs/secrets 等不该进镜像），
+# 但放行面向用户的几份说明——之前 Docker 用户装完容器后本地无源码、镜像里也没
+# 这几份文档，导致「给 Claude 的使用指南」（README）指向的 CLAUDE_PROMPT.md 拿不到。
+docs/*
+docs/**/*
+!docs/CLAUDE_PROMPT.md
+!docs/INTERNALS.md
+!docs/MULTI_OWNER.md
+!docs/OPERATIONS.md
+tests/
+deploy/
+# 例外：构建期需要它下载 cloudflared（见 Dockerfile 的 COPY），必须进构建上下文
+!deploy/fetch_cloudflared.py
+*.md
+!docs/CLAUDE_PROMPT.md
+!docs/INTERNALS.md
+!docs/MULTI_OWNER.md
+!docs/OPERATIONS.md
+!README.md
+!CHANGELOG.md
+
+# 日志与临时文件
+*.log
+logs/
+tmp/
+scratchpad/

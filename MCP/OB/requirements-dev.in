@@ -1,0 +1,13 @@
+# Development, audit, and CI tools.
+# Production dependencies remain sourced from requirements.txt.
+-r requirements.txt
+
+bandit
+cyclonedx-bom==7.3.0
+pip-audit
+pytest
+pytest-asyncio
+pytest-cov
+pytest-timeout
+ruff
+uv==0.11.23

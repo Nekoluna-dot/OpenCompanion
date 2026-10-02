@@ -1,0 +1,51 @@
+# Ombre Brain — 开发 / VPS 部署（从本地源码构建镜像）
+#
+# 用法：
+#   cd <项目根目录>
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# 敏感 key 通过 deploy/.env 或环境变量传入（不要写进此文件）：
+#   OMBRE_COMPRESS_API_KEY / OMBRE_EMBED_API_KEY / OMBRE_DASHBOARD_PASSWORD
+#
+# 存储约定（与 docker-compose.user.yml 一致，不再有 VPS 专属特殊路径）：
+#   - 记忆库 + 配置都落在数据卷 ./buckets（容器内 /app/buckets）。
+#   - 配置走镜像默认 OMBRE_CONFIG_PATH=/app/buckets/config.yaml，首启自动生成、
+#     Dashboard 改动持久化、重启不丢。**不要**再单文件挂载 config.yaml（宿主缺文件时
+#     Docker 会把它建成目录导致容器崩溃，见 entrypoint.sh 说明）。
+#   - 想把数据放别处：在 deploy/.env 设 OMBRE_HOST_VAULT_DIR=/绝对/路径。
+#
+# Cloudflare Tunnel：默认绕过 SRV edge discovery，兼容不支持 SRV 查询的 VPN DNS。
+#   如需恢复 cloudflared 原生发现，可在 deploy/.env 自行覆盖 TUNNEL_EDGE / TUNNEL_TRANSPORT_PROTOCOL。
+#
+# 端口：对外默认 18001（host）→ 容器内 8000（Dockerfile 固定，保持 Cloudflare ingress 指向 :8000）。
+#   想换对外端口：在 deploy/.env 设 OMBRE_HOST_PORT=xxxxx。
+
+services:
+  ombre-brain:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ombre-brain
+    restart: unless-stopped
+    ports:
+      - "${OMBRE_HOST_PORT:-18001}:8000"
+    environment:
+      - OMBRE_TRANSPORT=streamable-http
+      - OMBRE_EMBED_BACKEND=${OMBRE_EMBED_BACKEND:-api}
+      - OMBRE_COMPRESS_API_KEY=${OMBRE_COMPRESS_API_KEY}
+      - OMBRE_COMPRESS_BASE_URL=${OMBRE_COMPRESS_BASE_URL:-}
+      - OMBRE_COMPRESS_MODEL=${OMBRE_COMPRESS_MODEL:-}
+      - OMBRE_EMBED_API_KEY=${OMBRE_EMBED_API_KEY:-}
+      - OMBRE_EMBED_BASE_URL=${OMBRE_EMBED_BASE_URL:-}
+      - OMBRE_EMBED_MODEL=${OMBRE_EMBED_MODEL:-}
+      - OMBRE_DASHBOARD_PASSWORD=${OMBRE_DASHBOARD_PASSWORD}
+      # 传入容器用于持久化诊断；真正的宿主机挂载由下面 volumes 决定。
+      - OMBRE_HOST_VAULT_DIR=${OMBRE_HOST_VAULT_DIR:-}
+      # VPN DNS 可能不支持 _v2-origintunneld._tcp.argotunnel.com 的 SRV 查询。
+      - TUNNEL_EDGE=${TUNNEL_EDGE-region1.v2.argotunnel.com:7844,region2.v2.argotunnel.com:7844}
+      - TUNNEL_TRANSPORT_PROTOCOL=${TUNNEL_TRANSPORT_PROTOCOL:-http2}
+    volumes:
+      # 长语法避免 Windows 的 D:/... 盘符被误判为 volume 分隔符。
+      - type: bind
+        source: ${OMBRE_HOST_VAULT_DIR:-../buckets}
+        target: /app/buckets

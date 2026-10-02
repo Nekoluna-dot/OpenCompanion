@@ -1,0 +1,33 @@
+services:
+  opencompanion:
+    build: .
+    image: ghcr.io/nekoluna-dot/opencompanion:latest
+    container_name: opencompanion
+    # 容器主进程是网页控制台：机器人在控制台里启停，扫码也在网页日志中完成
+    command: ["python", "webconsole.py"]
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      # 网页控制台必须对外，其余服务保持回环监听默认值即可
+      - BOT_WEBCONSOLE_HOST=0.0.0.0
+      # 网页控制台访问令牌（控制台可停止机器人/删除数据，建议设置）
+      # - BOT_WEBCONSOLE_TOKEN=change-me
+    ports:
+      - "9000:9000"
+      # OmbreBrain Dashboard + HTTP MCP（OB 是 bot 的 stdio 子进程，
+      # 容器内固定监听 18001，见 MCP/OB/config.yaml host_port: 18001）
+      - "18001:18001"
+    volumes:
+      - ./config.ini:/app/config.ini
+      - ./prompt.txt:/app/prompt.txt
+      - ./prompt_extra.txt:/app/prompt_extra.txt
+      # OmbreBrain 配置与密钥（镜像内置的是占位符 key，必须挂载真实文件）
+      - ./MCP/OB/.env:/app/MCP/OB/.env
+      - ./MCP/OB/config.yaml:/app/MCP/OB/config.yaml
+      - ./MCP/OB/buckets:/app/MCP/OB/buckets
+      - ./data:/app/data
+      - ./conversation:/app/conversation
+      - ./logs:/app/logs
+      - session:/root/.weilink
+volumes:
+  session:

@@ -1,0 +1,68 @@
+# Ombre Brain — 用户自部署
+# 直接拉取 Docker Hub 镜像，不需要源码
+#
+# 默认（云端向量化 / 或暂不开向量化）：
+#   docker compose -f docker-compose.user.yml up -d
+#
+# 想要本地向量化（离线、无需 key、不出网，多起一个 ollama 容器）：
+#   docker compose -f docker-compose.user.yml --profile local up -d
+#   然后到 Dashboard →「③ 引擎 · 本地向量模型」→「下载 bge-m3」→「切本地」即可。
+#
+# 需要准备：
+#   1. 零配置即可启动：不需要预先创建任何 config.yaml。首次启动容器会在数据卷里
+#      （./buckets/config.yaml）自动生成默认配置（云端 Gemini，待填 key），
+#      之后在 Dashboard 里改、即时生效并持久化，重启不丢。
+#      ⚠️ 不要再用 `- ./config.yaml:/app/config.yaml` 这种单文件挂载：宿主缺文件时
+#         Docker（尤其 Windows/WSL2）会把它建成目录 → 容器读到目录直接崩溃重启，
+#         且该挂载点在容器内删不掉（Device busy），无法自救。配置改走 OMBRE_CONFIG_PATH。
+#   2. 设置以下环境变量（或在此文件 environment: 段填写）：
+#      OMBRE_COMPRESS_API_KEY  — 压缩/脱水用的 LLM key（必填）
+#      OMBRE_DASHBOARD_PASSWORD — Dashboard 登录密码（必填）
+#      向量化的 key/base_url/model 可留空，之后在 Dashboard 里随时填、即时生效。
+#   3. 想固定数据目录：在本文件旁的 .env 设置 OMBRE_HOST_VAULT_DIR=/绝对/路径。
+#      该目录同时保存 buckets、config.yaml 和 Tunnel token，--force-recreate 不会清空。
+
+services:
+  ombre-brain:
+    image: p0luz/ombre-brain:latest
+    container_name: ombre-brain
+    restart: unless-stopped
+    ports:
+      # 对外默认 18001 → 容器内 8000（镜像固定）。换端口：.env 设 OMBRE_HOST_PORT。
+      - "${OMBRE_HOST_PORT:-18001}:8000"
+    environment:
+      - OMBRE_TRANSPORT=streamable-http
+      # config 放进数据卷（./buckets），而不是单文件挂载 —— 见文件顶部说明。
+      # 首启自动生成，Dashboard 改动持久化到这里，重启不丢。
+      - OMBRE_CONFIG_PATH=/app/buckets/config.yaml
+      - OMBRE_COMPRESS_API_KEY=${OMBRE_COMPRESS_API_KEY}
+      - OMBRE_COMPRESS_BASE_URL=${OMBRE_COMPRESS_BASE_URL:-}
+      - OMBRE_COMPRESS_MODEL=${OMBRE_COMPRESS_MODEL:-}
+      - OMBRE_EMBED_API_KEY=${OMBRE_EMBED_API_KEY:-}
+      - OMBRE_EMBED_BASE_URL=${OMBRE_EMBED_BASE_URL:-}
+      - OMBRE_EMBED_MODEL=${OMBRE_EMBED_MODEL:-}
+      - OMBRE_DASHBOARD_PASSWORD=${OMBRE_DASHBOARD_PASSWORD}
+      - OMBRE_HOST_VAULT_DIR=${OMBRE_HOST_VAULT_DIR:-}
+      # 默认跳过 SRV edge discovery，兼容 VPN 提供的不完整 DNS resolver。
+      - TUNNEL_EDGE=${TUNNEL_EDGE-region1.v2.argotunnel.com:7844,region2.v2.argotunnel.com:7844}
+      - TUNNEL_TRANSPORT_PROTOCOL=${TUNNEL_TRANSPORT_PROTOCOL:-http2}
+    volumes:
+      - type: bind
+        source: ${OMBRE_HOST_VAULT_DIR:-./buckets}
+        target: /app/buckets
+      # 注意：不要加 `- ./config.yaml:/app/config.yaml`，那会在 Windows 上被建成目录导致崩溃。
+
+  # ── 可选：本地向量化（Ollama + bge-m3）。默认不启动 ──
+  # 仅在加 `--profile local` 时才拉起。OB 在容器网络里通过容器名
+  # ombre-ollama:11434 自动连它（代码已内置该默认，无需额外配置）。
+  # 需约 2–3GB 空闲内存 + 1.2GB 磁盘；纯 CPU 即可。
+  ombre-ollama:
+    image: ollama/ollama:latest
+    container_name: ombre-ollama
+    restart: unless-stopped
+    profiles: ["local"]
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  ollama-data:

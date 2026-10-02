@@ -1,0 +1,62 @@
+# 一个大脑、多人共用、记忆隔离 —— Docker 多实例示例（服务器 / VPS）
+#
+# 每个人一个 service：独立数据卷 + 独立对外端口 + 各自的 OMBRE_OWNER_NAME。
+# 所有 service 都设成相同的 OMBRE_OWNER_COUNT（= 总人数），前端据此决定显示归属徽标
+# （≥2 人才显示）。加第 N 个人：照抄一个 service 块，改 name/端口/卷，并把每个块的
+# OMBRE_OWNER_COUNT 一起改成新的总人数。
+#
+# 用法：
+#   cd <项目根目录>
+#   docker compose -f deploy/docker-compose.multi.yml up -d --build
+#
+# 敏感 key 走 deploy/.env（OMBRE_COMPRESS_API_KEY / OMBRE_EMBED_API_KEY / 各自密码）。
+
+x-common-env: &common-env
+  OMBRE_TRANSPORT: streamable-http
+  OMBRE_OWNER_COUNT: "2"          # ← 总人数；加人时所有 service 一起改
+  OMBRE_COMPRESS_API_KEY: ${OMBRE_COMPRESS_API_KEY:-}
+  OMBRE_COMPRESS_BASE_URL: ${OMBRE_COMPRESS_BASE_URL:-}
+  OMBRE_COMPRESS_MODEL: ${OMBRE_COMPRESS_MODEL:-}
+  OMBRE_EMBED_API_KEY: ${OMBRE_EMBED_API_KEY:-}
+  OMBRE_EMBED_BASE_URL: ${OMBRE_EMBED_BASE_URL:-}
+  OMBRE_EMBED_MODEL: ${OMBRE_EMBED_MODEL:-}
+  # 跳过 SRV edge discovery，兼容 VPN DNS；双 region 保留 Tunnel 冗余。
+  TUNNEL_EDGE: ${TUNNEL_EDGE-region1.v2.argotunnel.com:7844,region2.v2.argotunnel.com:7844}
+  TUNNEL_TRANSPORT_PROTOCOL: ${TUNNEL_TRANSPORT_PROTOCOL:-http2}
+
+services:
+  ming:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ombre-ming
+    restart: unless-stopped
+    ports:
+      - "18001:8000"
+    environment:
+      <<: *common-env
+      OMBRE_OWNER_NAME: 小明
+      OMBRE_DASHBOARD_PASSWORD: ${OMBRE_MING_PASSWORD:-}
+      OMBRE_HOST_VAULT_DIR: ${OMBRE_MING_VAULT_DIR:-}
+    volumes:
+      - type: bind
+        source: ${OMBRE_MING_VAULT_DIR:-./buckets-ming}
+        target: /app/buckets
+
+  hong:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ombre-hong
+    restart: unless-stopped
+    ports:
+      - "18002:8000"
+    environment:
+      <<: *common-env
+      OMBRE_OWNER_NAME: 小红
+      OMBRE_DASHBOARD_PASSWORD: ${OMBRE_HONG_PASSWORD:-}
+      OMBRE_HOST_VAULT_DIR: ${OMBRE_HONG_VAULT_DIR:-}
+    volumes:
+      - type: bind
+        source: ${OMBRE_HONG_VAULT_DIR:-./buckets-hong}
+        target: /app/buckets
